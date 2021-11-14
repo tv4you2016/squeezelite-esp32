@@ -183,7 +183,7 @@ static bool raop_sink_start(raop_cmd_vcb_t cmd_cb, raop_data_cb_t data_cb) {
     ESP_ERROR_CHECK( mdns_hostname_set(hostname) );
         
     char * sink_name_buffer= (char *)config_alloc_get(NVS_TYPE_STR,"airplay_name");
-    if(sink_name_buffer != NULL){
+    if (sink_name_buffer != NULL){
     	memset(sink_name, 0x00, sizeof(sink_name));
     	strncpy(sink_name,sink_name_buffer,sizeof(sink_name)-1 );
     	free(sink_name_buffer);
@@ -218,7 +218,7 @@ void raop_sink_init(raop_cmd_vcb_t cmd_cb, raop_data_cb_t data_cb) {
 		raop_cbs.data = data_cb;
 		TimerHandle_t timer = xTimerCreate("raopStart", 5000 / portTICK_RATE_MS, pdTRUE, NULL, raop_start_handler);
 		xTimerStart(timer, portMAX_DELAY);
-		LOG_INFO( "delaying AirPlay start");		
+		LOG_INFO( "Delaying AirPlay start");		
 	}	
 }
 

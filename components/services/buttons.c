@@ -47,7 +47,8 @@ static EXT_RAM_ATTR struct button_s {
 	TimerHandle_t timer;
 } buttons[MAX_BUTTONS];
 
-static EXT_RAM_ATTR struct {
+// can't use EXT_RAM_ATTR for initialized structure
+static struct {
 	int gpio, level;
 	struct button_s *button;
 } polled_gpio[] = { {36, -1, NULL}, {39, -1, NULL}, {-1, -1, NULL} };
