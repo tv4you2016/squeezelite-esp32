@@ -71,7 +71,7 @@ NB: You can use the pre-build binaries SqueezeAMP4MBFlash which has all the hard
 - spdif_config: bck=33,ws=25,do=15
 
 ### ESP32-A1S
-Works with [ESP32-A1S](https://docs.ai-thinker.com/esp32-a1s) module that includes audio codec and headset output. You still need to use a demo board like [this](https://www.aliexpress.com/item/4001060963585.html) or an external amplifier if you want direct speaker connection. Note that there is a version with AC101 codec and another one with ES8388 (see below)
+Works with [ESP32-A1S](https://docs.ai-thinker.com/esp32-a1s) module that includes audio codec and headset output. You still need to use a demo board like [this](https://www.aliexpress.com/item/4001060963585.html) or an external amplifier if you want direct speaker connection. Note that there is a version with AC101 codec and another one with ES8388 with probably two variants - these boards are a mess (see below)
 
 The board shown above has the following IO set
 - amplifier: GPIO21
@@ -95,8 +95,10 @@ So a possible config would be
 for AC101
 - dac_config: model=AC101,bck=27,ws=26,do=25,di=35,sda=33,scl=32
  
-for ES8388
+for ES8388 (it seems that there are variants with same version number - a total mess)
 - dac_config: model=ES8388,bck=5,ws=25,do=26,sda=18,scl=23,i2c=16
+or
+- dac_config: model=ES8388,bck=27,ws=25,do=26,sda=33,scl=32,i2c=16
 ### T-WATCH2020 by LilyGo
 This is a fun [smartwatch](http://www.lilygo.cn/prod_view.aspx?TypeId=50036&Id=1290&FId=t3:50036:3) based on ESP32. It has a 240x240 ST7789 screen and onboard audio. Not very useful to listen to anything but it works. This is an example of a device that requires an I2C set of commands for its dac (see below). There is a build-option if you decide to rebuild everything by yourself, otherwise the I2S default option works with the following parameters
 
