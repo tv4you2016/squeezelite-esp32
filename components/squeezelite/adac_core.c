@@ -189,4 +189,5 @@ esp_err_t adac_write(int i2c_addr, uint8_t reg, uint8_t *data, size_t count) {
 		ESP_LOGW(TAG, "I2C write failed");
 	}
 	
+	return ret;
 }	
