@@ -76,24 +76,7 @@ static esp_err_t _httpd_server_init(struct httpd_data *hd)
         return ESP_FAIL;
     }
 
-    int ctrl_fd = cs_create_ctrl_sock(hd->config.ctrl_port);
-    if (ctrl_fd < 0) {
-        ESP_LOGE(TAG, LOG_FMT("error in creating ctrl socket (%d)"), errno);
-        close(fd);
-        return ESP_FAIL;
-    }
-
-    int msg_fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (msg_fd < 0) {
-        ESP_LOGE(TAG, LOG_FMT("error in creating msg socket (%d)"), errno);
-        close(fd);
-        close(ctrl_fd);
-        return ESP_FAIL;
-    }
-
     hd->listen_fd = fd;
-    hd->ctrl_fd = ctrl_fd;
-    hd->msg_fd  = msg_fd;
     return ESP_OK;
 }
 
@@ -198,14 +181,6 @@ static esp_err_t _httpd_server(struct httpd_data *hd)
     }
 
     /* Case0: Do we have a control message? */
-    if (FD_ISSET(hd->ctrl_fd, &read_set)) {
-        ESP_LOGD(TAG, LOG_FMT("processing ctrl message"));
-        _httpd_process_ctrl_msg(hd);
-        if (hd->hd_td.status == THREAD_STOPPING) {
-            ESP_LOGD(TAG, LOG_FMT("stopping thread"));
-            return ESP_FAIL;
-        }
-    }
 
     /* Case1: Do we have any activity on the current data
      * sessions? */
@@ -259,8 +234,6 @@ static void _httpd_thread(void *arg)
     }
 
     ESP_LOGD(TAG, LOG_FMT("web server exiting"));
-    close(hd->msg_fd);
-    cs_free_ctrl_sock(hd->ctrl_fd);
     _httpd_close_all_sessions(hd);
     close(hd->listen_fd);
     hd->hd_td.status = THREAD_STOPPED;
