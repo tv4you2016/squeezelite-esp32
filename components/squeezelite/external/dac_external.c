@@ -104,25 +104,40 @@ bool i2c_json_execute(char *set) {
 
 	if (!json_set) return true;
 	
-	cJSON_ArrayForEach(item, json_set)
-	{
+	cJSON_ArrayForEach(item, json_set) {
 		cJSON *reg = cJSON_GetObjectItemCaseSensitive(item, "reg");
 		cJSON *val = cJSON_GetObjectItemCaseSensitive(item, "val");
-		cJSON *mode = cJSON_GetObjectItemCaseSensitive(item, "mode");
+		
+		if (cJSON_IsArray(val)) {
+			cJSON *value;			
+			uint8_t *data = malloc(cJSON_GetArraySize(val));
+			int count = 0;
+			
+			if (!data) continue;
+			
+			cJSON_ArrayForEach(value, val) {
+				data[count++] = value->valueint;		
+			}
+			
+			adac_write(i2c_addr, reg->valueint, data, count);
+			free(data);			
+		} else {
+			cJSON *mode = cJSON_GetObjectItemCaseSensitive(item, "mode");
 
-		if (!reg || !val) continue;
+			if (!reg || !val) continue;
 
-		if (!mode) {
-			adac_write_byte(i2c_addr, reg->valueint, val->valueint);
-		} else if (!strcasecmp(mode->valuestring, "or")) {
-			uint8_t data = adac_read_byte(i2c_addr,reg->valueint);
-			data |= (uint8_t) val->valueint;
-			adac_write_byte(i2c_addr, reg->valueint, data);
-		} else if (!strcasecmp(mode->valuestring, "and")) {
-			uint8_t data = adac_read_byte(i2c_addr, reg->valueint);
-			data &= (uint8_t) val->valueint;
-			adac_write_byte(i2c_addr, reg->valueint, data);
-        }
+			if (!mode) {
+				adac_write_byte(i2c_addr, reg->valueint, val->valueint);
+			} else if (!strcasecmp(mode->valuestring, "or")) {
+				uint8_t data = adac_read_byte(i2c_addr,reg->valueint);
+				data |= (uint8_t) val->valueint;
+				adac_write_byte(i2c_addr, reg->valueint, data);
+			} else if (!strcasecmp(mode->valuestring, "and")) {
+				uint8_t data = adac_read_byte(i2c_addr, reg->valueint);
+				data &= (uint8_t) val->valueint;
+				adac_write_byte(i2c_addr, reg->valueint, data);
+			}
+		}
 	}
 	
 	return true;
