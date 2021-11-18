@@ -80,35 +80,6 @@ static esp_err_t _httpd_server_init(struct httpd_data *hd)
     return ESP_OK;
 }
 
-static void _httpd_process_ctrl_msg(struct httpd_data *hd)
-{
-    struct httpd_ctrl_data msg;
-    int ret = recv(hd->ctrl_fd, &msg, sizeof(msg), 0);
-    if (ret <= 0) {
-        ESP_LOGW(TAG, LOG_FMT("error in recv (%d)"), errno);
-        return;
-    }
-    if (ret != sizeof(msg)) {
-        ESP_LOGW(TAG, LOG_FMT("incomplete msg"));
-        return;
-    }
-
-    switch (msg.hc_msg) {
-    case HTTPD_CTRL_WORK:
-        if (msg.hc_work) {
-            ESP_LOGD(TAG, LOG_FMT("work"));
-            (*msg.hc_work)(msg.hc_work_arg);
-        }
-        break;
-    case HTTPD_CTRL_SHUTDOWN:
-        ESP_LOGD(TAG, LOG_FMT("shutdown"));
-        hd->hd_td.status = THREAD_STOPPING;
-        break;
-    default:
-        break;
-    }
-}
-
 static esp_err_t _httpd_accept_conn(struct httpd_data *hd, int listen_fd)
 {
     /* If no space is available for new session, close the least recently used one */
@@ -164,13 +135,10 @@ static esp_err_t _httpd_server(struct httpd_data *hd)
          * older connections will be closed) */
         FD_SET(hd->listen_fd, &read_set);
     }
-    FD_SET(hd->ctrl_fd, &read_set);
 
-    int tmp_max_fd;
-    httpd_sess_set_descriptors(hd, &read_set, &tmp_max_fd);
-    int maxfd = MAX(hd->listen_fd, tmp_max_fd);
-    tmp_max_fd = maxfd;
-    maxfd = MAX(hd->ctrl_fd, tmp_max_fd);
+    int maxfd;
+    httpd_sess_set_descriptors(hd, &read_set, &maxfd);
+    maxfd = MAX(hd->listen_fd, maxfd);
 
     ESP_LOGD(TAG, LOG_FMT("doing select maxfd+1 = %d"), maxfd + 1);
     int active_cnt = select(maxfd + 1, &read_set, NULL, NULL, NULL);
@@ -179,8 +147,6 @@ static esp_err_t _httpd_server(struct httpd_data *hd)
         httpd_sess_delete_invalid(hd);
         return ESP_OK;
     }
-
-    /* Case0: Do we have a control message? */
 
     /* Case1: Do we have any activity on the current data
      * sessions? */
