@@ -40,7 +40,8 @@ static EXT_RAM_ATTR struct led_s {
 	TimerHandle_t timer;
 } leds[MAX_LED];
 
-static EXT_RAM_ATTR struct {
+// can't use EXT_RAM_ATTR for initialized structure
+static struct {
 	int gpio;
 	int active;
 	int pwm;
