@@ -129,8 +129,13 @@ static bool handler(u8_t *data, int len){
 			jack_mutes_amp = pkt->config == 0;
 			config_set_value(NVS_TYPE_STR, "jack_mutes_amp", jack_mutes_amp ? "y" : "n");		
 			
-			if (jack_mutes_amp && jack_inserted_svc()) adac->speaker(false);
-			else adac->speaker(true);
+			if (jack_mutes_amp && jack_inserted_svc()) {
+				adac->speaker(false);
+				if (amp_control.gpio != -1) gpio_set_level(amp_control.gpio, !amp_control.active);
+			} else {
+				adac->speaker(true);
+				if (amp_control.gpio != -1) gpio_set_level(amp_control.gpio, amp_control.active);
+			}	
 		}
 
 		LOG_INFO("got AUDO %02x", pkt->config);
@@ -151,13 +156,12 @@ static void jack_handler(bool inserted) {
 	// jack detection bounces a bit but that seems fine
 	if (jack_mutes_amp) {
 		LOG_INFO("switching amplifier %s", inserted ? "OFF" : "ON");
-		if (inserted) adac->speaker(false);
-		else adac->speaker(true);
+		adac->speaker(!inserted);
+		if (amp_control.gpio != -1) gpio_set_level(amp_control.gpio, inserted ? !amp_control.active : amp_control.active);
 	}
 	
 	// activate headset
-	if (inserted) adac->headset(true);
-	else adac->headset(false);
+	adac->headset(inserted);
 	
 	// and chain if any
 	if (jack_handler_chain) (jack_handler_chain)(inserted);
@@ -343,12 +347,13 @@ void output_init_i2s(log_level level, char *device, unsigned output_buf_size, ch
 	jack_handler_chain = jack_handler_svc;
 	jack_handler_svc = jack_handler;
 	
+	parse_set_GPIO(set_amp_gpio);
+
 	if (jack_mutes_amp && jack_inserted_svc()) adac->speaker(false);
 	else adac->speaker(true);
 	
 	adac->headset(jack_inserted_svc());
 	
-	parse_set_GPIO(set_amp_gpio);
 
 	// create task as a FreeRTOS task but uses stack in internal RAM
 	{
@@ -455,7 +460,10 @@ static void output_thread_i2s(void *arg) {
 				adac->speaker(false);
 				led_blink(LED_GREEN, 200, 1000);
 			} else if (output.state == OUTPUT_RUNNING) {
-				if (!jack_mutes_amp || !jack_inserted_svc()) adac->speaker(true);
+				if (!jack_mutes_amp || !jack_inserted_svc()) {
+					if (amp_control.gpio != -1) gpio_set_level(amp_control.gpio, amp_control.active);
+					adac->speaker(true);
+				}	
 				led_on(LED_GREEN);
 			}	
 		}
@@ -513,7 +521,6 @@ static void output_thread_i2s(void *arg) {
 			i2s_zero_dma_buffer(CONFIG_I2S_NUM);
 			i2s_start(CONFIG_I2S_NUM);
 			adac->power(ADAC_ON);	
-			if (amp_control.gpio != -1) gpio_set_level(amp_control.gpio, amp_control.active);
 		} 
 		
 		// this does not work well as set_sample_rates resets the fifos (and it's too early)

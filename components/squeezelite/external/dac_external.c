@@ -20,8 +20,8 @@
 
 static const char TAG[] = "DAC external";
 
-static void speaker(bool active) { }
-static void headset(bool active) { } 
+static void speaker(bool active);
+static void headset(bool active);
 static bool volume(unsigned left, unsigned right) { return false; }
 static void power(adac_power_e mode);
 static bool init(char *config, int i2c_port_num, i2s_config_t *i2s_config);
@@ -93,6 +93,22 @@ static bool init(char *config, int i2c_port_num, i2s_config_t *i2s_config) {
 static void power(adac_power_e mode) {
 	if (mode == ADAC_STANDBY || mode == ADAC_OFF) i2c_json_execute("poweroff");
 	else i2c_json_execute("poweron");
+}
+
+/****************************************************************************************
+ * speaker
+ */
+static void speaker(bool active) {
+	if (active) i2c_json_execute("speakeron");
+	else i2c_json_execute("speakeroff");
+} 
+
+/****************************************************************************************
+ * headset
+ */
+static void headset(bool active) {
+	if (active) i2c_json_execute("headseton");
+	else i2c_json_execute("headsetoff");
 }
 
 /****************************************************************************************
