@@ -282,14 +282,16 @@ void initialize_console() {
 	ESP_ERROR_CHECK(uart_param_config(CONFIG_ESP_CONSOLE_UART_NUM, &uart_config));
 
 	/* Install UART driver for interrupt-driven reads and writes */
-	ESP_ERROR_CHECK( uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 256, 0, 5, &uart_queue, 0));
-
+	ESP_ERROR_CHECK( uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 256, 0, 3, &uart_queue, 0));
+	
 	/* Tell VFS to use UART driver */
 	esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
 		
 	/* re-direct stdin to our own driver so we can gather data from various sources */
-	stdin_queue_set = xQueueCreateSet(5);
-	stdin_buffer = xRingbufferCreate(128, RINGBUF_TYPE_BYTEBUF);
+	stdin_queue_set = xQueueCreateSet(2);
+	stdin_buffer = xRingbufferCreateStatic(128, RINGBUF_TYPE_BYTEBUF, 
+											heap_caps_malloc(128, MALLOC_CAP_SPIRAM), 
+											heap_caps_malloc(sizeof(StaticRingbuffer_t), MALLOC_CAP_SPIRAM));
 	xRingbufferAddToQueueSetRead(stdin_buffer, stdin_queue_set);
 	xQueueAddToSet(uart_queue, stdin_queue_set);
 	
@@ -301,7 +303,7 @@ void initialize_console() {
 
 	ESP_ERROR_CHECK(esp_vfs_register("/dev/console", &vfs, NULL));
 	freopen("/dev/console", "r", stdin);
-	
+
 	/* Disable buffering on stdin */
 	setvbuf(stdin, NULL, _IONBF, 0);
 
