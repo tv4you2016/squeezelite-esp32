@@ -51,7 +51,7 @@
 
 const static char TAG[] = "telnet";
 static int uart_fd=0;
-RingbufHandle_t buf_handle;
+static RingbufHandle_t buf_handle;
 
 static size_t send_chunk=300;
 static size_t log_buf_size=2000;      //32-bit aligned size
@@ -64,9 +64,7 @@ extern bool bypass_wifi_manager;
  * Forward declarations
  */
 static void telnet_task(void *data);
-static ssize_t stdout_read(int fd, void* data, size_t size);
-static int stdout_open(const char * path, int flags, int mode);
-static int stdout_close(int fd);
+static int stdio_open(const char * path, int flags, int mode);
 static int stdout_fstat(int fd, struct stat * st);
 static ssize_t stdout_write(int fd, const void * data, size_t size);
 static char *eventToString(telnet_event_type_t type);
@@ -79,9 +77,6 @@ struct telnetUserData {
 	char * rxbuf;
 };
 
-bool is_serial_suppressed(){
-	return bIsEnabled?!bMirrorToUART:false ;
-}
 void init_telnet(){
 	char *val= get_nvs_value_alloc(NVS_TYPE_STR, "telnet_enable");
 	if (!val || strlen(val) == 0 || !strcasestr("YXD",val) ) {
@@ -89,6 +84,7 @@ void init_telnet(){
 		if(val) free(val);
 		return;
 	}
+
 	// if wifi manager is bypassed, there will possibly be no wifi available
 	//
 	bMirrorToUART = (strcasestr("D",val)!=NULL);
@@ -112,7 +108,7 @@ void init_telnet(){
 		log_buf_size=log_buf_size>0?log_buf_size:4000;
 	}
 	// Redirect the output to our telnet handler as soon as possible
-	StaticRingbuffer_t *buffer_struct = (StaticRingbuffer_t *)malloc(sizeof(StaticRingbuffer_t) );
+	StaticRingbuffer_t *buffer_struct = (StaticRingbuffer_t *) heap_caps_malloc(sizeof(StaticRingbuffer_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 	// All non-split ring buffer must have their memory alignment set to 32 bits.
 	uint8_t *buffer_storage = (uint8_t *)heap_caps_malloc(sizeof(uint8_t)*log_buf_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT );
 	buf_handle = xRingbufferCreateStatic(log_buf_size, RINGBUF_TYPE_BYTEBUF, buffer_storage, buffer_struct);
@@ -127,31 +123,31 @@ void init_telnet(){
 	const esp_vfs_t vfs = {
 			.flags = ESP_VFS_FLAG_DEFAULT,
 			.write = &stdout_write,
-			.open = &stdout_open,
+			.open = &stdio_open,
 			.fstat = &stdout_fstat,
-			.close = &stdout_close,
-			.read = &stdout_read,
-
 		};
 
 	if(bMirrorToUART){
 		uart_fd=open("/dev/uart/0", O_RDWR);
 	}
+
 	ESP_ERROR_CHECK(esp_vfs_register("/dev/pkspstdout", &vfs, NULL));
 	freopen("/dev/pkspstdout", "w", stdout);
 	freopen("/dev/pkspstdout", "w", stderr);
+
 	bIsEnabled=true;
 }
 void start_telnet(void * pvParameter){
 	static bool isStarted=false;
-	StaticTask_t *xTaskBuffer = (StaticTask_t*) heap_caps_malloc(sizeof(StaticTask_t), (MALLOC_CAP_INTERNAL|MALLOC_CAP_8BIT));
-	StackType_t *xStack = heap_caps_malloc(TELNET_STACK_SIZE,(MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT));
+	StaticTask_t *xTaskBuffer = (StaticTask_t*) heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+	StackType_t *xStack = heap_caps_malloc(TELNET_STACK_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 	
 	if(!isStarted && bIsEnabled) {
 		xTaskCreateStatic( (TaskFunction_t) &telnet_task, "telnet", TELNET_STACK_SIZE, NULL, ESP_TASK_PRIO_MIN, xStack, xTaskBuffer);
 		isStarted=true;
 	}
 }
+
 static void telnet_task(void *data) {
 	int serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	struct sockaddr_in serverAddr;
@@ -233,30 +229,6 @@ static char *eventToString(telnet_event_type_t type) {
 /**
  * Telnet handler.
  */
-void process_received_data(const char * buffer, size_t size){
-	//ESP_LOGD(tag, "received data, len=%d", event->data.size);
-
-	char * command = malloc(size+1);
-	const char * c=buffer;
-
-	// scrub from any escape command
-	if(*c == '\e') while (size && size-- && *c++ != '\n');
-	memcpy(command,c,size);
-	command[size]='\0';
-	if(command[0]!='\r' && command[0]!='\n'){
-		// echo the command buffer out to uart and run
-		if(bMirrorToUART){
-			write(uart_fd, command, size);
-		}
-		for(int i=strlen(command);i>=0;i--){
-			// strip any cr/lf
-			if(command[i]== '\n' || command[i]== '\r') command[i]= '\0';
-		}
-		run_command((char *)command);
-	}
-	free(command);
-
-}
 static void handle_telnet_events(
 		telnet_t *thisTelnet,
 		telnet_event_t *event,
@@ -270,17 +242,13 @@ static void handle_telnet_events(
 			//printf("ERROR: (telnet) send: %d (%s)", errno, strerror(errno));
 		}
 		break;
-
 	case TELNET_EV_DATA:
-		 process_received_data(event->data.buffer, event->data.size);
+		 console_push(event->data.buffer, event->data.size);
 		break;
 	case TELNET_EV_TTYPE:
 		printf("telnet event: %s\n", eventToString(event->type));
 		telnet_ttype_send(telnetUserData->tnHandle);
 		break;
-
-
-
 	default:
 		printf("telnet event: %s\n", eventToString(event->type));
 		break;
@@ -337,10 +305,10 @@ static void handle_telnet_conn() {
 	{TELNET_TELOPT_LINEMODE,   TELNET_WONT, TELNET_DO },
     { -1, 0, 0 }
   };
-  struct telnetUserData *pTelnetUserData = (struct telnetUserData *)malloc(sizeof(struct telnetUserData));
+  struct telnetUserData *pTelnetUserData = (struct telnetUserData *)heap_caps_malloc(sizeof(struct telnetUserData), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   tnHandle = telnet_init(my_telopts, handle_telnet_events, 0, pTelnetUserData);
 
-  pTelnetUserData->rxbuf = (char *) heap_caps_malloc(TELNET_RX_BUF, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  pTelnetUserData->rxbuf = (char *) heap_caps_malloc(TELNET_RX_BUF, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   pTelnetUserData->tnHandle = tnHandle;
   pTelnetUserData->sockfd = partnerSocket;
 
@@ -386,16 +354,7 @@ static ssize_t stdout_write(int fd, const void * data, size_t size) {
 	return bMirrorToUART?write(uart_fd, data, size):size;
 }
 
-static ssize_t stdout_read(int fd, void* data, size_t size) {
-	//return read(fd, data, size);
-	return 0;
-}
-
-static int stdout_open(const char * path, int flags, int mode) {
-	return 0;
-}
-
-static int stdout_close(int fd) {
+static int stdio_open(const char * path, int flags, int mode) {
 	return 0;
 }
 
