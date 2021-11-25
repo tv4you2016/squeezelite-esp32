@@ -30,12 +30,16 @@
 #include "messaging.h"
 
 #include "config.h"
-pthread_t thread_console;
+static pthread_t thread_console;
 static void * console_thread();
 void console_start();
 static const char * TAG = "console";
 extern bool bypass_wifi_manager;
 extern void register_squeezelite();
+
+static EXT_RAM_ATTR QueueSetHandle_t stdin_queue_set;
+static EXT_RAM_ATTR QueueHandle_t uart_queue;
+static EXT_RAM_ATTR RingbufHandle_t stdin_buffer;
 
 /* Prompt to be printed before each line.
  * This can be customized, made dynamic, etc.
@@ -50,7 +54,7 @@ const char* recovery_prompt = LOG_COLOR_E "recovery-squeezelite-esp32> " LOG_RES
 
 #define MOUNT_PATH "/data"
 #define HISTORY_PATH MOUNT_PATH "/history.txt"
-esp_err_t run_command(char * line);
+static esp_err_t run_command(char * line);
 #define ADD_TO_JSON(o,t,n) if (t->n) cJSON_AddStringToObject(o,QUOTE(n),t->n);
 #define ADD_PARMS_TO_CMD(o,t,n) { cJSON * parms = ParmsToJSON(&t.n->hdr); if(parms) cJSON_AddItemToObject(o,QUOTE(n),parms); }
 cJSON * cmdList;
@@ -230,13 +234,40 @@ void process_autoexec(){
 	}
 }
 
+static ssize_t stdin_read(int fd, void* data, size_t size) {
+	size_t bytes = -1;
+	
+	while (1) {
+		QueueSetMemberHandle_t activated = xQueueSelectFromSet(stdin_queue_set, portMAX_DELAY);
+	
+		if (activated == uart_queue) {
+			uart_event_t event;
+			
+			xQueueReceive(uart_queue, &event, 0);
+	
+			if (event.type == UART_DATA) {
+				bytes = uart_read_bytes(CONFIG_ESP_CONSOLE_UART_NUM, data, size < event.size ? size : event.size, 0);
+				// we have to do our own line ending translation here 
+				for (int i = 0; i < bytes; i++) if (((char*)data)[i] == '\r') ((char*)data)[i] = '\n';
+				break;
+			}	
+		} else if (xRingbufferCanRead(stdin_buffer, activated)) {
+			char *p = xRingbufferReceiveUpTo(stdin_buffer, &bytes, 0, size);
+			// we might receive strings, replace null by \n
+			for (int i = 0; i < bytes; i++) if (p[i] == '\0' || p[i] == '\r') p[i] = '\n';						
+			memcpy(data, p, bytes);
+			vRingbufferReturnItem(stdin_buffer, p);
+			break;
+		}
+	}	
+	
+	return bytes;
+}
+
+static int stdin_dummy(const char * path, int flags, int mode) {	return 0; }
 
 void initialize_console() {
-
-	/* Disable buffering on stdin */
-	setvbuf(stdin, NULL, _IONBF, 0);
-
-	/* Minicom, screen, idf_monitor send CR when ENTER key is pressed */
+	/* Minicom, screen, idf_monitor send CR when ENTER key is pressed (unused if we redirect stdin) */
 	esp_vfs_dev_uart_set_rx_line_endings(ESP_LINE_ENDINGS_CR);
 	/* Move the caret to the beginning of the next line on '\n' */
 	esp_vfs_dev_uart_set_tx_line_endings(ESP_LINE_ENDINGS_CRLF);
@@ -251,10 +282,28 @@ void initialize_console() {
 	ESP_ERROR_CHECK(uart_param_config(CONFIG_ESP_CONSOLE_UART_NUM, &uart_config));
 
 	/* Install UART driver for interrupt-driven reads and writes */
-	ESP_ERROR_CHECK( uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 256, 0, 0, NULL, 0));
+	ESP_ERROR_CHECK( uart_driver_install(CONFIG_ESP_CONSOLE_UART_NUM, 256, 0, 5, &uart_queue, 0));
 
 	/* Tell VFS to use UART driver */
 	esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
+		
+	/* re-direct stdin to our own driver so we can gather data from various sources */
+	stdin_queue_set = xQueueCreateSet(5);
+	stdin_buffer = xRingbufferCreate(128, RINGBUF_TYPE_BYTEBUF);
+	xRingbufferAddToQueueSetRead(stdin_buffer, stdin_queue_set);
+	xQueueAddToSet(uart_queue, stdin_queue_set);
+	
+	const esp_vfs_t vfs = {
+			.flags = ESP_VFS_FLAG_DEFAULT,
+			.open = stdin_dummy,
+			.read = stdin_read,
+	};
+
+	ESP_ERROR_CHECK(esp_vfs_register("/dev/console", &vfs, NULL));
+	freopen("/dev/console", "r", stdin);
+	
+	/* Disable buffering on stdin */
+	setvbuf(stdin, NULL, _IONBF, 0);
 
 	/* Initialize the console */
 	esp_console_config_t console_config = { .max_cmdline_args = 28,
@@ -282,20 +331,14 @@ void initialize_console() {
 	//linenoiseHistoryLoad(HISTORY_PATH);
 }
 
+bool console_push(const char *data, size_t size) {
+	return xRingbufferSend(stdin_buffer, data, size, pdMS_TO_TICKS(100)) == pdPASS;
+}	
+
 void console_start() {
-	if(!is_serial_suppressed()){
-		initialize_console();
-	}
-	else {
-		/* Initialize the console */
-		esp_console_config_t console_config = { .max_cmdline_args = 28,
-				.max_cmdline_length = 600,
-	#if CONFIG_LOG_COLORS
-				.hint_color = atoi(LOG_COLOR_CYAN)
-	#endif
-				};
-		ESP_ERROR_CHECK(esp_console_init(&console_config));
-	}
+	/* we always run console b/c telnet sends commands to stdin */
+	initialize_console();
+
 	/* Register commands */
 	esp_console_register_help_command();
 	register_system();
@@ -311,65 +354,59 @@ void console_start() {
 	}
 	register_i2ctools();
 	
-	if(!is_serial_suppressed()){
-		printf("\n");
-		if(is_recovery_running){
-			printf("****************************************************************\n"
-			"RECOVERY APPLICATION\n"
-			"This mode is used to flash Squeezelite into the OTA partition\n"
-			"****\n\n");
-		}
-		printf("Type 'help' to get the list of commands.\n"
-		"Use UP/DOWN arrows to navigate through command history.\n"
-		"Press TAB when typing command name to auto-complete.\n"
-		"\n");
-		if(!is_recovery_running){
-			printf("To automatically execute lines at startup:\n"
-					"\tSet NVS variable autoexec (U8) = 1 to enable, 0 to disable automatic execution.\n"
-					"\tSet NVS variable autoexec[1~9] (string)to a command that should be executed automatically\n");
-		}
-		printf("\n\n");
-
-		/* Figure out if the terminal supports escape sequences */
-		int probe_status = linenoiseProbe();
-		if (probe_status) { /* zero indicates success */
-			printf("\n****************************\n"
-					"Your terminal application does not support escape sequences.\n"
-					"Line editing and history features are disabled.\n"
-					"On Windows, try using Putty instead.\n"
-					"****************************\n");
-			linenoiseSetDumbMode(1);
-	#if CONFIG_LOG_COLORS
-			/* Since the terminal doesn't support escape sequences,
-			 * don't use color codes in the prompt.
-			 */
-			if(is_recovery_running){
-				recovery_prompt=  "recovery-squeezelite-esp32>";
-			}
-			prompt = "squeezelite-esp32> ";
-
-	#endif //CONFIG_LOG_COLORS
-		}
-		esp_pthread_cfg_t cfg = esp_pthread_get_default_config();
-		cfg.thread_name= "console";
-		cfg.inherit_cfg = true;
-		if(is_recovery_running){
-			prompt = recovery_prompt;
-			cfg.stack_size = 4096 ;
-		}
-		esp_pthread_set_cfg(&cfg);
-		pthread_attr_t attr;
-		pthread_attr_init(&attr);
-
-		pthread_create(&thread_console, &attr, console_thread, NULL);
-		pthread_attr_destroy(&attr);   	
-	} 
-	else if(!is_recovery_running){
-		process_autoexec();
+	printf("\n");
+	if(is_recovery_running){
+		printf("****************************************************************\n"
+		"RECOVERY APPLICATION\n"
+		"This mode is used to flash Squeezelite into the OTA partition\n"
+		"****\n\n");
 	}
+	printf("Type 'help' to get the list of commands.\n"
+	"Use UP/DOWN arrows to navigate through command history.\n"
+	"Press TAB when typing command name to auto-complete.\n"
+	"\n");
+	if(!is_recovery_running){
+		printf("To automatically execute lines at startup:\n"
+				"\tSet NVS variable autoexec (U8) = 1 to enable, 0 to disable automatic execution.\n"
+				"\tSet NVS variable autoexec[1~9] (string)to a command that should be executed automatically\n");
+	}
+	printf("\n\n");
 
+	/* Figure out if the terminal supports escape sequences */
+	int probe_status = linenoiseProbe();
+	if (probe_status) { /* zero indicates success */
+		printf("\n****************************\n"
+				"Your terminal application does not support escape sequences.\n"
+				"Line editing and history features are disabled.\n"
+				"On Windows, try using Putty instead.\n"
+				"****************************\n");
+		linenoiseSetDumbMode(1);
+#if CONFIG_LOG_COLORS
+		/* Since the terminal doesn't support escape sequences,
+		 * don't use color codes in the prompt.
+		 */
+		if(is_recovery_running){
+			recovery_prompt=  "recovery-squeezelite-esp32>";
+		}
+		prompt = "squeezelite-esp32> ";
+#endif //CONFIG_LOG_COLORS
+	}
+	esp_pthread_cfg_t cfg = esp_pthread_get_default_config();
+	cfg.thread_name= "console";
+	cfg.inherit_cfg = true;
+	if(is_recovery_running){
+		prompt = recovery_prompt;
+		cfg.stack_size = 4096 ;
+	}
+	esp_pthread_set_cfg(&cfg);
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+
+	pthread_create(&thread_console, &attr, console_thread, NULL);
+	pthread_attr_destroy(&attr);   	
 }
-esp_err_t run_command(char * line){
+
+static esp_err_t run_command(char * line){
 	/* Try to run the command */
 	int ret;
 	esp_err_t err = esp_console_run(line, &ret);
@@ -389,6 +426,7 @@ esp_err_t run_command(char * line){
 	}
 	return err;
 }
+
 static void * console_thread() {
 	if(!is_recovery_running){
 		process_autoexec();

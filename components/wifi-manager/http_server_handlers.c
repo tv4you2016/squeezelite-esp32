@@ -508,7 +508,8 @@ esp_err_t console_cmd_post_handler(httpd_req_t *req){
 	}
 	else{
 		// navigate to the first child of the config structure
-		if(run_command(cJSON_GetStringValue(item))!=ESP_OK){
+		char *cmd = cJSON_GetStringValue(item);
+		if(!console_push(cmd, strlen(cmd) + 1)){
 			httpd_resp_send(req, (const char *)failed, strlen(failed));
 		}
 		else {
