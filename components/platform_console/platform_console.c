@@ -401,11 +401,8 @@ void console_start() {
 		cfg.stack_size = 4096 ;
 	}
 	esp_pthread_set_cfg(&cfg);
-	pthread_attr_t attr;
-	pthread_attr_init(&attr);
+	pthread_create(&thread_console, NULL, console_thread, NULL);
 
-	pthread_create(&thread_console, &attr, console_thread, NULL);
-	pthread_attr_destroy(&attr);   	
 }
 
 static esp_err_t run_command(char * line){
