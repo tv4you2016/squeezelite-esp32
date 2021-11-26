@@ -118,7 +118,7 @@ static void set_i2s_pin(char *config, i2s_pin_config_t *pin_config) {
  * Get i2s config structure from config string
  */
 const i2s_platform_config_t * config_get_i2s_from_str(char * dac_config ){
-	static EXT_RAM_ATTR i2s_platform_config_t i2s_dac_pin = {
+	static i2s_platform_config_t i2s_dac_pin = {
 		.i2c_addr = -1,
 		.sda= -1,
 		.scl = -1,
@@ -146,7 +146,7 @@ const i2s_platform_config_t * config_get_i2s_from_str(char * dac_config ){
  * Get eth config structure from config string
  */
 const eth_config_t * config_get_eth_from_str(char * eth_config ){
-	static EXT_RAM_ATTR eth_config_t eth_pin = {
+	static eth_config_t eth_pin = {
 		.rmii = false,
 		.model = "",
 	};
@@ -561,7 +561,7 @@ const set_GPIO_struct_t * get_gpio_struct(){
  */
 const spi_bus_config_t * config_spi_get(spi_host_device_t * spi_host) {
 	char *nvs_item, *p;
-	static EXT_RAM_ATTR spi_bus_config_t spi = {
+	static spi_bus_config_t spi = {
 		.mosi_io_num = -1,
         .sclk_io_num = -1,
         .miso_io_num = -1,
