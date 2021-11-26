@@ -37,9 +37,13 @@ static const char * TAG = "console";
 extern bool bypass_wifi_manager;
 extern void register_squeezelite();
 
-static EXT_RAM_ATTR QueueSetHandle_t stdin_queue_set;
 static EXT_RAM_ATTR QueueHandle_t uart_queue;
-static EXT_RAM_ATTR RingbufHandle_t stdin_buffer;
+static EXT_RAM_ATTR struct {
+		uint8_t _buf[128];
+		StaticRingbuffer_t _ringbuf;
+		RingbufHandle_t handle;
+		QueueSetHandle_t queue_set;
+} stdin_redir;	
 
 /* Prompt to be printed before each line.
  * This can be customized, made dynamic, etc.
@@ -238,7 +242,7 @@ static ssize_t stdin_read(int fd, void* data, size_t size) {
 	size_t bytes = -1;
 	
 	while (1) {
-		QueueSetMemberHandle_t activated = xQueueSelectFromSet(stdin_queue_set, portMAX_DELAY);
+		QueueSetMemberHandle_t activated = xQueueSelectFromSet(stdin_redir.queue_set, portMAX_DELAY);
 	
 		if (activated == uart_queue) {
 			uart_event_t event;
@@ -251,12 +255,12 @@ static ssize_t stdin_read(int fd, void* data, size_t size) {
 				for (int i = 0; i < bytes; i++) if (((char*)data)[i] == '\r') ((char*)data)[i] = '\n';
 				break;
 			}	
-		} else if (xRingbufferCanRead(stdin_buffer, activated)) {
-			char *p = xRingbufferReceiveUpTo(stdin_buffer, &bytes, 0, size);
+		} else if (xRingbufferCanRead(stdin_redir.handle, activated)) {
+			char *p = xRingbufferReceiveUpTo(stdin_redir.handle, &bytes, 0, size);
 			// we might receive strings, replace null by \n
 			for (int i = 0; i < bytes; i++) if (p[i] == '\0' || p[i] == '\r') p[i] = '\n';						
 			memcpy(data, p, bytes);
-			vRingbufferReturnItem(stdin_buffer, p);
+			vRingbufferReturnItem(stdin_redir.handle, p);
 			break;
 		}
 	}	
@@ -276,7 +280,7 @@ void initialize_console() {
 	 * correct while APB frequency is changing in light sleep mode.
 	 */
 	const uart_config_t uart_config = { .baud_rate =
-			CONFIG_CONSOLE_UART_BAUDRATE, .data_bits = UART_DATA_8_BITS,
+			CONFIG_ESP_CONSOLE_UART_BAUDRATE, .data_bits = UART_DATA_8_BITS,
 			.parity = UART_PARITY_DISABLE, .stop_bits = UART_STOP_BITS_1,
 			.use_ref_tick = true };
 	ESP_ERROR_CHECK(uart_param_config(CONFIG_ESP_CONSOLE_UART_NUM, &uart_config));
@@ -288,12 +292,10 @@ void initialize_console() {
 	esp_vfs_dev_uart_use_driver(CONFIG_ESP_CONSOLE_UART_NUM);
 		
 	/* re-direct stdin to our own driver so we can gather data from various sources */
-	stdin_queue_set = xQueueCreateSet(2);
-	stdin_buffer = xRingbufferCreateStatic(128, RINGBUF_TYPE_BYTEBUF, 
-											heap_caps_malloc(128, MALLOC_CAP_SPIRAM), 
-											heap_caps_malloc(sizeof(StaticRingbuffer_t), MALLOC_CAP_SPIRAM));
-	xRingbufferAddToQueueSetRead(stdin_buffer, stdin_queue_set);
-	xQueueAddToSet(uart_queue, stdin_queue_set);
+	stdin_redir.queue_set = xQueueCreateSet(2);
+	stdin_redir.handle = xRingbufferCreateStatic(sizeof(stdin_redir._buf), RINGBUF_TYPE_BYTEBUF, stdin_redir._buf, &stdin_redir._ringbuf);
+	xRingbufferAddToQueueSetRead(stdin_redir.handle, stdin_redir.queue_set);
+	xQueueAddToSet(uart_queue, stdin_redir.queue_set);
 	
 	const esp_vfs_t vfs = {
 			.flags = ESP_VFS_FLAG_DEFAULT,
@@ -334,7 +336,7 @@ void initialize_console() {
 }
 
 bool console_push(const char *data, size_t size) {
-	return xRingbufferSend(stdin_buffer, data, size, pdMS_TO_TICKS(100)) == pdPASS;
+	return xRingbufferSend(stdin_redir.handle, data, size, pdMS_TO_TICKS(100)) == pdPASS;
 }	
 
 void console_start() {

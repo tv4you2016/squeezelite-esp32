@@ -64,7 +64,7 @@ extern bool bypass_wifi_manager;
  * Forward declarations
  */
 static void telnet_task(void *data);
-static int stdio_open(const char * path, int flags, int mode);
+static int stdout_open(const char * path, int flags, int mode);
 static int stdout_fstat(int fd, struct stat * st);
 static ssize_t stdout_write(int fd, const void * data, size_t size);
 static char *eventToString(telnet_event_type_t type);
@@ -79,6 +79,7 @@ struct telnetUserData {
 
 void init_telnet(){
 	char *val= get_nvs_value_alloc(NVS_TYPE_STR, "telnet_enable");
+
 	if (!val || strlen(val) == 0 || !strcasestr("YXD",val) ) {
 		ESP_LOGI(TAG,"Telnet support disabled");
 		if(val) free(val);
@@ -123,7 +124,7 @@ void init_telnet(){
 	const esp_vfs_t vfs = {
 			.flags = ESP_VFS_FLAG_DEFAULT,
 			.write = &stdout_write,
-			.open = &stdio_open,
+			.open = &stdout_open,
 			.fstat = &stdout_fstat,
 		};
 
@@ -137,15 +138,17 @@ void init_telnet(){
 
 	bIsEnabled=true;
 }
+
 void start_telnet(void * pvParameter){
 	static bool isStarted=false;
+	
+	if(isStarted || !bIsEnabled) return;
+	
 	StaticTask_t *xTaskBuffer = (StaticTask_t*) heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 	StackType_t *xStack = heap_caps_malloc(TELNET_STACK_SIZE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 	
-	if(!isStarted && bIsEnabled) {
-		xTaskCreateStatic( (TaskFunction_t) &telnet_task, "telnet", TELNET_STACK_SIZE, NULL, ESP_TASK_PRIO_MIN, xStack, xTaskBuffer);
-		isStarted=true;
-	}
+	xTaskCreateStatic( (TaskFunction_t) &telnet_task, "telnet", TELNET_STACK_SIZE, NULL, ESP_TASK_PRIO_MIN, xStack, xTaskBuffer);
+	isStarted=true;
 }
 
 static void telnet_task(void *data) {
@@ -354,7 +357,7 @@ static ssize_t stdout_write(int fd, const void * data, size_t size) {
 	return bMirrorToUART?write(uart_fd, data, size):size;
 }
 
-static int stdio_open(const char * path, int flags, int mode) {
+static int stdout_open(const char * path, int flags, int mode) {
 	return 0;
 }
 
