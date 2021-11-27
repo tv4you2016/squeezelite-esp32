@@ -46,7 +46,7 @@
  * Globals
  */
 
-#define TELNET_STACK_SIZE 8048
+#define TELNET_STACK_SIZE 4096
 #define TELNET_RX_BUF 1024
 
 const static char TAG[] = "telnet";
