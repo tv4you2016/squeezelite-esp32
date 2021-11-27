@@ -263,18 +263,37 @@ void register_default_nvs(){
 
 	esp_read_mac((uint8_t *)&mac, ESP_MAC_WIFI_STA);
 	snprintf(macStr, LOCAL_MAC_SIZE-1,"-%x%x%x", mac[3], mac[4], mac[5]);
-
-	DEFAULT_NAME_WITH_MAC(default_bt_name,CONFIG_BT_NAME);
-	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "bt_name", default_bt_name);
-	config_set_default(NVS_TYPE_STR, "bt_name", default_bt_name, 0);
-
+	
 	DEFAULT_NAME_WITH_MAC(default_host_name,DEFAULT_HOST_NAME);
 	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "host_name", default_host_name);
 	config_set_default(NVS_TYPE_STR, "host_name", default_host_name, 0);
 
+#if CONFIG_BT_SINK
+	DEFAULT_NAME_WITH_MAC(default_bt_name,CONFIG_BT_NAME);
+	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "bt_name", default_bt_name);
+	config_set_default(NVS_TYPE_STR, "bt_name", default_bt_name, 0);
+	
+	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "enable_bt_sink", STR(CONFIG_BT_SINK));
+	config_set_default(NVS_TYPE_STR, "enable_bt_sink", STR(CONFIG_BT_SINK), 0);
+
+	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "bt_sink_pin", STR(CONFIG_BT_SINK_PIN));
+	config_set_default(NVS_TYPE_STR, "bt_sink_pin", STR(CONFIG_BT_SINK_PIN), 0);
+	
+	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "bt_sink_volume", "127");
+	config_set_default(NVS_TYPE_STR, "bt_sink_volume", "127", 0);
+#endif	
+
+#if CONFIG_AIRPLAY_SINK
 	DEFAULT_NAME_WITH_MAC(default_airplay_name,CONFIG_AIRPLAY_NAME);
 	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "airplay_name",default_airplay_name);
 	config_set_default(NVS_TYPE_STR, "airplay_name",default_airplay_name , 0);
+	
+	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "airplay_port", CONFIG_AIRPLAY_PORT);
+	config_set_default(NVS_TYPE_STR, "airplay_port", CONFIG_AIRPLAY_PORT, 0);
+	
+	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "enable_airplay", STR(CONFIG_AIRPLAY_SINK));
+	config_set_default(NVS_TYPE_STR, "enable_airplay", STR(CONFIG_AIRPLAY_SINK), 0);
+#endif	
 
 	DEFAULT_NAME_WITH_MAC(default_ap_name,CONFIG_DEFAULT_AP_SSID);
 	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "ap_ssid", default_ap_name);
@@ -317,9 +336,6 @@ void register_default_nvs(){
 	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "ap_pwd", CONFIG_DEFAULT_AP_PASSWORD);
 	config_set_default(NVS_TYPE_STR, "ap_pwd", CONFIG_DEFAULT_AP_PASSWORD, 0);
 
-	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "airplay_port", CONFIG_AIRPLAY_PORT);
-	config_set_default(NVS_TYPE_STR, "airplay_port", CONFIG_AIRPLAY_PORT, 0);
-
 	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "a2dp_dev_name", CONFIG_A2DP_DEV_NAME);
 	config_set_default(NVS_TYPE_STR, "a2dp_dev_name", CONFIG_A2DP_DEV_NAME, 0);
 
@@ -350,18 +366,6 @@ void register_default_nvs(){
 	snprintf(number_buffer,sizeof(number_buffer)-1,"%d",OTA_TASK_PRIOTITY);
 	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "ota_prio", number_buffer);
 	config_set_default(NVS_TYPE_STR, "ota_prio", number_buffer, 0);
-
-	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "enable_bt_sink", STR(CONFIG_BT_SINK));
-	config_set_default(NVS_TYPE_STR, "enable_bt_sink", STR(CONFIG_BT_SINK), 0);
-
-	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "bt_sink_pin", STR(CONFIG_BT_SINK_PIN));
-	config_set_default(NVS_TYPE_STR, "bt_sink_pin", STR(CONFIG_BT_SINK_PIN), 0);
-	
-	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "bt_sink_volume", "127");
-	config_set_default(NVS_TYPE_STR, "bt_sink_volume", "127", 0);
-	
-	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "enable_airplay", STR(CONFIG_AIRPLAY_SINK));
-	config_set_default(NVS_TYPE_STR, "enable_airplay", STR(CONFIG_AIRPLAY_SINK), 0);
 
 	ESP_LOGD(TAG,"Registering default value for key %s, value %s", "display_config", CONFIG_DISPLAY_CONFIG);
 	config_set_default(NVS_TYPE_STR, "display_config", CONFIG_DISPLAY_CONFIG, 0);
@@ -425,8 +429,10 @@ void handle_ap_connect(){
 	start_telnet(NULL);
 	halSTORAGE_RebootCounterUpdate(0);
 }
+
 void app_main()
 {
+	ESP_LOGW(TAG, "Heap internal:%zu/%zu", heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_total_size(MALLOC_CAP_INTERNAL));
 	const esp_partition_t *running = esp_ota_get_running_partition();
 	is_recovery_running = (running->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY);
 	esp_reset_reason_t xReason = esp_reset_reason();

@@ -11,24 +11,15 @@
 
 #include "platform_config.h"
 #include "squeezelite.h"
-#include "bt_app_sink.h"
-#include "raop_sink.h"
 #include <math.h>
 
-#define LOCK_O   mutex_lock(outputbuf->mutex)
-#define UNLOCK_O mutex_unlock(outputbuf->mutex)
-#define LOCK_D   mutex_lock(decode.mutex);
-#define UNLOCK_D mutex_unlock(decode.mutex);
-
-enum { DECODE_BT = 1, DECODE_RAOP };
-
-extern struct outputstate output;
-extern struct decodestate decode;
-extern struct buffer *outputbuf;
-// this is the only system-wide loglevel variable
-extern log_level loglevel;
-
+#if CONFIG_BT_SINK
+#include "bt_app_sink.h"
 static bool enable_bt_sink;
+#endif
+
+#if CONFIG_AIRPLAY_SINK
+#include "raop_sink.h"
 static bool enable_airplay;
 
 #define RAOP_OUTPUT_SIZE (((RAOP_SAMPLE_RATE * BYTES_PER_FRAME * 2 * 120) / 100) & ~BYTES_PER_FRAME)
@@ -44,6 +35,20 @@ static EXT_RAM_ATTR struct {
 	s32_t len;
 	u32_t start_time, playtime;
 } raop_sync;
+#endif
+
+#define LOCK_O   mutex_lock(outputbuf->mutex)
+#define UNLOCK_O mutex_unlock(outputbuf->mutex)
+#define LOCK_D   mutex_lock(decode.mutex);
+#define UNLOCK_D mutex_unlock(decode.mutex);
+
+enum { DECODE_BT = 1, DECODE_RAOP};
+
+extern struct outputstate output;
+extern struct decodestate decode;
+extern struct buffer *outputbuf;
+// this is the only system-wide loglevel variable
+extern log_level loglevel;
 
 /****************************************************************************************
  * Common sink data handler
@@ -95,7 +100,7 @@ static void sink_data_handler(const uint8_t *data, uint32_t len)
 /****************************************************************************************
  * BT sink command handler
  */
-
+#if CONFIG_BT_SINK
 static bool bt_sink_cmd_handler(bt_sink_cmd_t cmd, va_list args) 
 {
 	// don't LOCK_O as there is always a chance that LMS takes control later anyway
@@ -158,10 +163,12 @@ static bool bt_sink_cmd_handler(bt_sink_cmd_t cmd, va_list args)
 
 	return true;
 }
+#endif
 
 /****************************************************************************************
  * raop sink data handler
  */
+#if CONFIG_AIRPLAY_SINK
 static void raop_sink_data_handler(const uint8_t *data, uint32_t len, u32_t playtime) {
 	
 	raop_sync.playtime = playtime;
@@ -292,6 +299,7 @@ static bool raop_sink_cmd_handler(raop_event_t event, va_list args)
 	UNLOCK_D;
 	return true;
 }
+#endif
 
 /****************************************************************************************
  * We provide the generic codec register option
@@ -299,16 +307,21 @@ static bool raop_sink_cmd_handler(raop_event_t event, va_list args)
 void register_external(void) {
 	char *p;
 
+#if CONFIG_BT_SINK
 	if ((p = config_alloc_get(NVS_TYPE_STR, "enable_bt_sink")) != NULL) {
 		enable_bt_sink = strcmp(p,"1") == 0 || strcasecmp(p,"y") == 0;
 		free(p);
 	}
+#endif	
 
+#if CONFIG_AIRPLAY_SINK
 	if ((p = config_alloc_get(NVS_TYPE_STR, "enable_airplay")) != NULL) {
 		enable_airplay = strcmp(p,"1") == 0 || strcasecmp(p,"y") == 0;
 		free(p);
 	}
-
+#endif	
+	
+#if CONFIG_BT_SINK	
 	if (!strcasestr(output.device, "BT ") ) {
 		if(enable_bt_sink){
 			bt_sink_init(bt_sink_cmd_handler, sink_data_handler);
@@ -317,32 +330,44 @@ void register_external(void) {
 	} else {
 		LOG_WARN("Cannot be a BT sink and source");
 	}	
+#endif
 
+#if CONFIG_AIRPLAY_SINK
 	if (enable_airplay){
 		raop_sink_init(raop_sink_cmd_handler, raop_sink_data_handler);
 		LOG_INFO("Initializing AirPlay sink");
 	}
+#endif	
+	
 }
 
 void deregister_external(void) {
+#if CONFIG_BT_SINK
 	if (!strcasestr(output.device, "BT ") && enable_bt_sink) {
 		LOG_INFO("Stopping BT sink");
 		bt_sink_deinit();
 	}
+#endif
+#if CONFIG_AIRPLAY_SINK
 	if (enable_airplay){
 		LOG_INFO("Stopping AirPlay sink");		
 		raop_sink_deinit();
 	}
+#endif
 }
 
 void decode_restore(int external) {
 	switch (external) {
+#if CONFIG_BT_SINK		
 	case DECODE_BT:
 		bt_disconnect();
 		break;
+#endif
+#if CONFIG_AIRPLAY_SINK
 	case DECODE_RAOP:
 		raop_disconnect();
 		raop_state = RAOP_STOP;
 		break;
+#endif
 	}
 }
