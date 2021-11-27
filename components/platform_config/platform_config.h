@@ -8,9 +8,7 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-#ifdef __cplusplus
-}
-#endif
+
 #define DECLARE_SET_DEFAULT(t) void config_set_default_## t (const char *key, t  value);
 #define DECLARE_GET_NUM(t) esp_err_t config_get_## t (const char *key, t *  value);
 #ifndef FREE_RESET
@@ -44,4 +42,8 @@ char * config_alloc_get_json(bool bFormatted);
 esp_err_t config_set_value(nvs_type_t nvs_type, const char *key, const void * value);
 nvs_type_t  config_get_item_type(cJSON * entry);
 void * config_safe_alloc_get_entry_value(nvs_type_t nvs_type, cJSON * entry);
+
+#ifdef __cplusplus
+}
+#endif
 
