@@ -432,7 +432,6 @@ void handle_ap_connect(){
 
 void app_main()
 {
-	ESP_LOGW(TAG, "Heap internal:%zu/%zu", heap_caps_get_free_size(MALLOC_CAP_INTERNAL), heap_caps_get_total_size(MALLOC_CAP_INTERNAL));
 	const esp_partition_t *running = esp_ota_get_running_partition();
 	is_recovery_running = (running->subtype == ESP_PARTITION_SUBTYPE_APP_FACTORY);
 	esp_reset_reason_t xReason = esp_reset_reason();
