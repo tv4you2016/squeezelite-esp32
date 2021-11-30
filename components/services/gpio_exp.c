@@ -20,8 +20,12 @@ static const char TAG[] = "gpio expander";
 static void   IRAM_ATTR intr_isr_handler(void* arg);
 static struct gpio_exp_s* find_expander(struct gpio_exp_s *expander, int *gpio);
 
-static void   pca9535_set_direction(union gpio_exp_phy_u *phy, uint32_t r_mask, uint32_t w_mask);
-static int    pca9535_read(union gpio_exp_phy_u *phy);
+static void   pca9535_set_direction(union gpio_exp_phy_u*, uint32_t, uint32_t);
+static int    pca9535_read(union gpio_exp_phy_u*);
+static void   pca9535_write(union gpio_exp_phy_u*, uint32_t, uint32_t);
+static void   pca85xx_set_direction(union gpio_exp_phy_u*, uint32_t, uint32_t);
+static int    pca85xx_read(union gpio_exp_phy_u*);
+static void   pca85xx_write(union gpio_exp_phy_u*, uint32_t, uint32_t);
 
 static esp_err_t i2c_write_byte(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg, uint8_t val);
 static uint8_t   i2c_read_byte(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg);
@@ -31,13 +35,22 @@ static esp_err_t i2c_write_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg,
 static const struct gpio_exp_model_s {
 	char *model;
 	gpio_int_type_t trigger;
-	void (*set_direction)(union gpio_exp_phy_u *phy, uint32_t r_mask, uint32_t mask);
-	int (*read)(union gpio_exp_phy_u *phy);
+	void (*init)(union gpio_exp_phy_u*);
+	int  (*read)(union gpio_exp_phy_u*);
+	void (*write)(union gpio_exp_phy_u*, uint32_t r_mask, uint32_t shadow);
+	void (*set_direction)(union gpio_exp_phy_u*, uint32_t r_mask, uint32_t w_mask);
+	void (*set_pull_mode)(int, gpio_pull_mode_t);
 } registered[] = {
 	{ .model = "pca9535",
 	  .trigger = GPIO_INTR_NEGEDGE, 
 	  .set_direction = pca9535_set_direction,
-	  .read = pca9535_read, }
+	  .read = pca9535_read,
+	  .write = pca9535_write, },
+	{ .model = "pca85xx",
+	  .trigger = GPIO_INTR_NEGEDGE, 
+	  .set_direction = pca85xx_set_direction,
+	  .read = pca85xx_read,
+	  .write = pca85xx_write, }
 };
 
 static uint8_t n_expanders;
@@ -96,6 +109,7 @@ struct gpio_exp_s* gpio_exp_create(const gpio_exp_config_t *config) {
 	expander->first = config->base;
 	expander->last = config->base + config->count - 1;
 	memcpy(&expander->phy, &config->phy, sizeof(union gpio_exp_phy_u));
+	if (expander->model->init) expander->model->init(&expander->phy);
 
 	// set interrupt if possible
 	if (config->intr > 0) {
@@ -170,16 +184,49 @@ struct gpio_exp_s* gpio_exp_set_direction(int gpio, gpio_mode_t mode, struct gpi
  * Get GPIO level with cache
  */
 int gpio_exp_get_level(int gpio, uint32_t age, struct gpio_exp_s *expander) {
-	if ((expander = find_expander(expander, &gpio)) == NULL) return false;
-	
+	if ((expander = find_expander(expander, &gpio)) == NULL) return -1;
 	uint32_t now = xTaskGetTickCount();
 	
 	if (now - expander->age >= pdMS_TO_TICKS(age)) {
 		expander->shadow = expander->model->read(&expander->phy);
 		expander->age = now;
 	}
-	
-	return expander->shadow & (1 << gpio) ? 1 : 0;
+
+	ESP_LOGD(TAG, "Get level for GPIO %u => read %x", expander->first + gpio, expander->shadow);
+	return (expander->shadow >> gpio) & 0x01;
+}
+
+/******************************************************************************
+ * Set GPIO level with cache
+ */
+void gpio_exp_set_level(int gpio, int level, struct gpio_exp_s *expander) {
+	if ((expander = find_expander(expander, &gpio)) == NULL) return;
+	uint32_t mask = 1 << gpio;
+
+	if ((expander->w_mask & mask) == 0) {
+		ESP_LOGW(TAG, "GPIO %d is not set for output", expander->first + gpio);
+		return;
+	}
+
+	level = level ? mask : 0;
+	mask &= expander->shadow;
+
+	// only write if shadow not up to date
+	if ((mask ^ level) && expander->model->write) {
+		expander->shadow = (expander->shadow & ~(mask | level)) | level;
+		expander->model->write(&expander->phy, expander->r_mask, expander->shadow);
+	}
+
+	ESP_LOGD(TAG, "Set level %x for GPIO %u => wrote %x", level, expander->first + gpio, expander->shadow);
+}
+
+/******************************************************************************
+ * Set GPIO pullmode
+ */
+void gpio_exp_set_pull_mode(int gpio, gpio_pull_mode_t mode, struct gpio_exp_s *expander) {
+	if ((expander = find_expander(expander, &gpio)) != NULL && expander->model->set_pull_mode) {
+		expander->model->set_pull_mode(gpio, mode);
+	}
 }
 
 /******************************************************************************
@@ -188,12 +235,12 @@ int gpio_exp_get_level(int gpio, uint32_t age, struct gpio_exp_s *expander) {
 void gpio_exp_enumerate(gpio_exp_enumerator enumerator, struct gpio_exp_s *expander) {
 	uint32_t value = expander->model->read(&expander->phy) ^ expander->shadow;
 	uint8_t clz;
-
+	
 	// memorize newly read value and just update if requested
 	expander->shadow ^= value;
 	if (!enumerator) return;
 	
-	// now we have a bitmap of all modified GPIO since last call
+	// now we have a bitmap of all modified GPIO sinnce last call
 	for (int gpio = 0; value; value <<= (clz + 1)) {
 		clz = __builtin_clz(value);
 		gpio += clz;
@@ -216,19 +263,35 @@ static struct gpio_exp_s* find_expander(struct gpio_exp_s *expander, int *gpio) 
 }
 
 /****************************************************************************************
- * Configure unused GPIO to output
+ * PCA9535 family : direction, read and write
  */
 static void pca9535_set_direction(union gpio_exp_phy_u *phy, uint32_t r_mask, uint32_t w_mask) {
-	esp_err_t err = i2c_write_word(phy->port, phy->addr, 0x06, r_mask);
-	ESP_LOGD(TAG, "PCA9535 set direction %x %d", r_mask, err);
+	i2c_write_word(phy->port, phy->addr, 0x06, r_mask);
+}
+
+static int pca9535_read(union gpio_exp_phy_u *phy) {
+	return i2c_read_word(phy->port, phy->addr, 0x00);
+}
+
+static void pca9535_write(union gpio_exp_phy_u *phy, uint32_t r_mask, uint32_t shadow) {
+	i2c_write_word(phy->port, phy->addr, 0x02, shadow);
 }
 
 /****************************************************************************************
- * Configure unused GPIO to output
+ * PCA85xx family : read and write
  */
-static int pca9535_read(union gpio_exp_phy_u *phy) {
-	ESP_LOGD(TAG, "PCA9535 read @%d", phy->addr);
-	return i2c_read_word(phy->port, phy->addr, 0x0);
+static void pca85xx_set_direction(union gpio_exp_phy_u *phy, uint32_t r_mask, uint32_t w_mask) {
+	// all inputs must be set to 1 (open drain) and output are left open as well
+	i2c_write_word(phy->port, phy->addr, 0x255, r_mask | w_mask);
+}
+
+static int pca85xx_read(union gpio_exp_phy_u *phy) {
+	return i2c_read_word(phy->port, phy->addr, 0xff);
+}
+
+static void pca85xx_write(union gpio_exp_phy_u *phy, uint32_t r_mask, uint32_t shadow) {
+	// all input must be set to 1 (open drain)
+	i2c_write_word(phy->port, phy->addr, 0xff, shadow | r_mask);
 }
 
 /****************************************************************************************
@@ -307,10 +370,14 @@ static uint16_t i2c_read_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg) {
     i2c_master_start(cmd);
 	
     i2c_master_write_byte(cmd, (i2c_addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_NACK);
-    i2c_master_write_byte(cmd, reg, I2C_MASTER_NACK);
-	
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (i2c_addr << 1) | I2C_MASTER_READ, I2C_MASTER_NACK);
+
+	// when using a register, write it's value then the device address again
+	if (reg != 0xff) {
+		i2c_master_write_byte(cmd, reg, I2C_MASTER_NACK);
+		i2c_master_start(cmd);
+		i2c_master_write_byte(cmd, (i2c_addr << 1) | I2C_MASTER_READ, I2C_MASTER_NACK);
+	}
+
     i2c_master_read(cmd, (uint8_t*) &data, 2, I2C_MASTER_NACK);
 	
     i2c_master_stop(cmd);
@@ -332,7 +399,7 @@ static esp_err_t i2c_write_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg,
     i2c_master_start(cmd);
 	
 	i2c_master_write_byte(cmd, (i2c_addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_NACK);
-	i2c_master_write_byte(cmd, reg, I2C_MASTER_NACK);
+	if (reg != 0xff) i2c_master_write_byte(cmd, reg, I2C_MASTER_NACK);
 	i2c_master_write(cmd, (uint8_t*) &data, 2, I2C_MASTER_NACK);
     
 	i2c_master_stop(cmd);
