@@ -483,6 +483,35 @@ const i2c_config_t * config_i2c_get(int * i2c_port) {
 }
 
 /****************************************************************************************
+ * Get IO expander config structure from config string
+ */
+const gpio_exp_config_t* config_gpio_exp_get(void) {
+	char *nvs_item, *p;
+	static gpio_exp_config_t config = {
+		.intr = -1,
+		.count = 8,	
+	};
+	config.phy.port = i2c_system_port;
+
+	nvs_item = config_alloc_get(NVS_TYPE_STR, "gpio_exp_config");
+	if (!nvs_item) return NULL;
+	
+	if ((p = strcasestr(nvs_item, "addr")) != NULL) config.phy.addr = atoi(strchr(p, '=') + 1);
+	if ((p = strcasestr(nvs_item, "intr")) != NULL) config.intr = atoi(strchr(p, '=') + 1);
+	if ((p = strcasestr(nvs_item, "base")) != NULL) config.base = atoi(strchr(p, '=') + 1);
+	if ((p = strcasestr(nvs_item, "count")) != NULL) config.count = atoi(strchr(p, '=') + 1);
+	if ((p = strcasestr(nvs_item, "model")) != NULL) sscanf(p, "%*[^=]=%31[^,]", config.model);
+	if ((p = strcasestr(nvs_item, "port")) != NULL) {
+		char port[8] = "";
+		sscanf(p, "%*[^=]=%7[^,]", port);
+		if (strcasestr(port, "dac")) config.phy.port = 0;
+	}	
+
+	free(nvs_item);
+	return &config;
+}	
+
+/****************************************************************************************
  * 
  */
 const gpio_with_level_t * get_gpio_struct_member(const char * nvs_item, const char * name){

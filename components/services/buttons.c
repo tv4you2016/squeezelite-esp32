@@ -21,6 +21,7 @@
 #include "esp_task.h"
 #include "driver/gpio.h"
 #include "driver/rmt.h"
+#include "gpio_exp.h"
 #include "buttons.h"
 #include "rotary_encoder.h"
 #include "globdefs.h"
@@ -68,10 +69,12 @@ static EXT_RAM_ATTR struct {
 	infrared_handler handler;
 } infrared;
 
-static xQueueHandle button_evt_queue;
+static QueueHandle_t button_queue, button_exp_queue;
+static TimerHandle_t button_exp_timer;
 static QueueSetHandle_t common_queue_set;
 
 static void buttons_task(void* arg);
+static void buttons_handler(struct button_s *button, int level);
 
 /****************************************************************************************
  * Start task needed by button,s rotaty and infrared
@@ -87,7 +90,7 @@ static void common_task_init(void) {
  }	
 
 /****************************************************************************************
- * GPIO low-level handler
+ * GPIO low-level ISR handler
  */
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
@@ -103,23 +106,37 @@ static void IRAM_ATTR gpio_isr_handler(void* arg)
 /****************************************************************************************
  * Buttons debounce/longpress timer
  */
-static void buttons_timer( TimerHandle_t xTimer ) {
+static void buttons_timer_handler( TimerHandle_t xTimer ) {
 	struct button_s *button = (struct button_s*) pvTimerGetTimerID (xTimer);
+	buttons_handler(button, gpio_get_level(button->gpio));
+}
 
-	button->level = gpio_get_level(button->gpio);
-	if (button->shifter && button->shifter->type == button->shifter->level) button->shifter->shifting = true;
+/****************************************************************************************
+ * GPIO expander low-level ISR handler
+ */
+static BaseType_t IRAM_ATTR gpio_exp_isr_handler(void* arg)
+{
+	BaseType_t woken = pdFALSE;
+	xTimerResetFromISR((TimerHandle_t) arg, &woken);
+	return woken;
+}
 
-	if (button->long_press && !button->long_timer && button->level == button->type) {
-		// detect a long press, so hold event generation
-		ESP_LOGD(TAG, "setting long timer gpio:%u level:%u", button->gpio, button->level);
-		xTimerChangePeriod(xTimer, button->long_press / portTICK_RATE_MS, 0);
-		button->long_timer = true;
-	} else {
-		// send a button pressed/released event (content is copied in queue)
-		ESP_LOGD(TAG, "sending event for gpio:%u level:%u", button->gpio, button->level);
-		// queue will have a copy of button's context
-		xQueueSend(button_evt_queue, button, 0);
-		button->long_timer = false;
+/****************************************************************************************
+ * Buttons expander debounce timer
+ */
+static void buttons_exp_timer_handler( TimerHandle_t xTimer ) {
+	struct gpio_exp_s *expander = (struct gpio_exp_s*) pvTimerGetTimerID (xTimer);
+	xQueueSend(button_exp_queue, &expander, 0);
+	ESP_LOGI(TAG, "Button expander base %u debounced", gpio_exp_base(expander));
+}
+
+/****************************************************************************************
+ * Buttons expander enumerator
+ */
+static void buttons_exp_enumerator(int gpio, int level, struct gpio_exp_s *expander) {
+	for (int i = 0; i < n_buttons; i++) if (buttons[i].gpio == gpio) {
+		buttons_handler(buttons + i, level);
+		return;
 	}
 }
 
@@ -134,9 +151,31 @@ static void buttons_polling( TimerHandle_t xTimer ) {
 	
 		if (level != polled_gpio[i].level) {
 			polled_gpio[i].level = level;
-			buttons_timer(polled_gpio[i].button->timer);
+			buttons_handler(polled_gpio[i].button, level);
 		}	
 	}	
+}
+
+/****************************************************************************************
+ * Buttons timer handler for press/longpress
+ */
+static void buttons_handler(struct button_s *button, int level) {
+	button->level = level;
+
+	if (button->shifter && button->shifter->type == button->shifter->level) button->shifter->shifting = true;
+
+	if (button->long_press && !button->long_timer && button->level == button->type) {
+		// detect a long press, so hold event generation
+		ESP_LOGD(TAG, "setting long timer gpio:%u level:%u", button->gpio, button->level);
+		xTimerChangePeriod(button->timer, button->long_press / portTICK_RATE_MS, 0);
+		button->long_timer = true;
+	} else {
+		// send a button pressed/released event (content is copied in queue)
+		ESP_LOGD(TAG, "sending event for gpio:%u level:%u", button->gpio, button->level);
+		// queue will have a copy of button's context
+		xQueueSend(button_queue, button, 0);
+		button->long_timer = false;
+	}
 }
 
 /****************************************************************************************
@@ -151,13 +190,13 @@ static void buttons_task(void* arg) {
 		// wait on button, rotary and infrared queues 
 		if ((xActivatedMember = xQueueSelectFromSet( common_queue_set, portMAX_DELAY )) == NULL) continue;
 		
-		if (xActivatedMember == button_evt_queue) {
+		if (xActivatedMember == button_queue) {
 			struct button_s button;
 			button_event_e event;
 			button_press_e press;
 			
 			// received a button event
-			xQueueReceive(button_evt_queue, &button, 0);
+			xQueueReceive(button_queue, &button, 0);
 
 			event = (button.level == button.type) ? BUTTON_PRESSED : BUTTON_RELEASED;		
 
@@ -176,21 +215,29 @@ static void buttons_task(void* arg) {
 				if (event == BUTTON_RELEASED) {
 					// early release of a long-press button, send press/release
 					if (!button.shifting) {
-						(*button.handler)(button.client, BUTTON_PRESSED, press, false);		
-						(*button.handler)(button.client, BUTTON_RELEASED, press, false);		
+						button.handler(button.client, BUTTON_PRESSED, press, false);		
+						button.handler(button.client, BUTTON_RELEASED, press, false);		
 					}
 					// button is a copy, so need to go to real context
 					button.self->shifting = false;
 				} else if (!button.shifting) {
 					// normal long press and not shifting so don't discard
-					(*button.handler)(button.client, BUTTON_PRESSED, press, true);
+					button.handler(button.client, BUTTON_PRESSED, press, true);
 				}  
 			} else {
 				// normal press/release of a button or release of a long-press button
-				if (!button.shifting) (*button.handler)(button.client, event, press, button.long_press);
+				if (!button.shifting) button.handler(button.client, event, press, button.long_press);
 				// button is a copy, so need to go to real context
 				button.self->shifting = false;
 			}
+		} else if (xActivatedMember == button_exp_queue) {
+			struct gpio_exp_s *expander;
+			/* 
+			we are not there yet, this is just a notice of a debounce, we need to enumerate 
+			GPIOs and let buttons_handler take care of longpress & al
+			*/
+			xQueueReceive(button_exp_queue, &expander, 0);
+			gpio_exp_enumerate(buttons_exp_enumerator, expander);
 		} else if (xActivatedMember == rotary.queue) {
 			rotary_encoder_event_t event = { 0 };
 			
@@ -225,9 +272,9 @@ void button_create(void *client, int gpio, int type, bool pull, int debounce, bu
 	ESP_LOGI(TAG, "Creating button using GPIO %u, type %u, pull-up/down %u, long press %u shifter %d", gpio, type, pull, long_press, shifter_gpio);
 
 	if (!n_buttons) {
-		button_evt_queue = xQueueCreate(BUTTON_QUEUE_LEN, sizeof(struct button_s));
+		button_queue = xQueueCreate(BUTTON_QUEUE_LEN, sizeof(struct button_s));
 		common_task_init();
-		xQueueAddToSet( button_evt_queue, common_queue_set );
+		xQueueAddToSet( button_queue, common_queue_set );
 	}
 	
 	// just in case this structure is allocated in a future release
@@ -241,7 +288,7 @@ void button_create(void *client, int gpio, int type, bool pull, int debounce, bu
 	buttons[n_buttons].long_press = long_press;
 	buttons[n_buttons].shifter_gpio = shifter_gpio;
 	buttons[n_buttons].type = type;
-	buttons[n_buttons].timer = xTimerCreate("buttonTimer", buttons[n_buttons].debounce / portTICK_RATE_MS, pdFALSE, (void *) &buttons[n_buttons], buttons_timer);
+	buttons[n_buttons].timer = xTimerCreate("buttonTimer", buttons[n_buttons].debounce / portTICK_RATE_MS, pdFALSE, (void *) &buttons[n_buttons], buttons_timer_handler);
 	buttons[n_buttons].self = buttons + n_buttons;
 
 	for (int i = 0; i < n_buttons; i++) {
@@ -258,45 +305,59 @@ void button_create(void *client, int gpio, int type, bool pull, int debounce, bu
 		}	
 	}
 
-	gpio_pad_select_gpio(gpio);
-	gpio_set_direction(gpio, GPIO_MODE_INPUT);
+	// creation is different is this is a native or an expanded GPIO
+	if (gpio < GPIO_EXP_BASE_MIN) {
+		gpio_pad_select_gpio(gpio);
+		gpio_set_direction(gpio, GPIO_MODE_INPUT);
 
-	// we need any edge detection
-	gpio_set_intr_type(gpio, GPIO_INTR_ANYEDGE);
-
-	// do we need pullup or pulldown
-	if (pull) {
-		if (GPIO_IS_VALID_OUTPUT_GPIO(gpio)) {
-			if (type == BUTTON_LOW) gpio_set_pull_mode(gpio, GPIO_PULLUP_ONLY);
-			else gpio_set_pull_mode(gpio, GPIO_PULLDOWN_ONLY);
-		} else {	
-			ESP_LOGW(TAG, "cannot set pull up/down for gpio %u", gpio);
+		// do we need pullup or pulldown
+		if (pull) {
+			if (GPIO_IS_VALID_OUTPUT_GPIO(gpio)) {
+				if (type == BUTTON_LOW) gpio_set_pull_mode(gpio, GPIO_PULLUP_ONLY);
+				else gpio_set_pull_mode(gpio, GPIO_PULLDOWN_ONLY);
+			} else {	
+				ESP_LOGW(TAG, "cannot set pull up/down for gpio %u", gpio);
+			}
 		}
-	}
 	
-	// and initialize level ...
-	buttons[n_buttons].level = gpio_get_level(gpio);
+		// and initialize level ...
+		buttons[n_buttons].level = gpio_get_level(gpio);
 	
-	// nasty ESP32 bug: fire-up constantly INT on GPIO 36/39 if ADC1, AMP, Hall used which WiFi does when PS is activated
-	for (int i = 0; polled_gpio[i].gpio != -1; i++) if (polled_gpio[i].gpio == gpio) {
-		if (!polled_timer) {
-			polled_timer = xTimerCreate("buttonsPolling", 100 / portTICK_RATE_MS, pdTRUE, polled_gpio, buttons_polling);		
-			xTimerStart(polled_timer, portMAX_DELAY);
+		// nasty ESP32 bug: fire-up constantly INT on GPIO 36/39 if ADC1, AMP, Hall used which WiFi does when PS is activated
+		for (int i = 0; polled_gpio[i].gpio != -1; i++) if (polled_gpio[i].gpio == gpio) {
+			if (!polled_timer) {
+				polled_timer = xTimerCreate("buttonsPolling", 100 / portTICK_RATE_MS, pdTRUE, polled_gpio, buttons_polling);		
+				xTimerStart(polled_timer, portMAX_DELAY);
+			}	
+		
+			polled_gpio[i].button = buttons + n_buttons;					
+			polled_gpio[i].level = gpio_get_level(gpio);
+			ESP_LOGW(TAG, "creating polled gpio %u, level %u", gpio, polled_gpio[i].level);		
+		
+			gpio = -1;
+			break;
+		}
+	
+		// only create ISR if this is not a polled gpio
+		if (gpio != -1) {
+			// we need any edge detection
+			gpio_set_intr_type(gpio, GPIO_INTR_ANYEDGE);
+			gpio_isr_handler_add(gpio, gpio_isr_handler, (void*) &buttons[n_buttons]);
+			gpio_intr_enable(gpio);
 		}	
-		
-		polled_gpio[i].button = buttons + n_buttons;					
-		polled_gpio[i].level = gpio_get_level(gpio);
-		ESP_LOGW(TAG, "creating polled gpio %u, level %u", gpio, polled_gpio[i].level);		
-		
-		gpio = -1;
-		break;
+	} else {
+		// set GPIO as an ouptut and acquire value
+		struct gpio_exp_s *expander = gpio_exp_set_direction(gpio, GPIO_MODE_INPUT, NULL);
+		buttons[n_buttons].level = gpio_exp_get_level(gpio, 0, expander);
+
+		// create queue and timer for GPIO expander
+		if (!button_exp_queue && expander) {
+			button_exp_queue = xQueueCreate(BUTTON_QUEUE_LEN, sizeof(struct gpio_exp_s*));
+			button_exp_timer = xTimerCreate("button_expander", pdMS_TO_TICKS(DEBOUNCE), pdFALSE, expander, buttons_exp_timer_handler);		
+			xQueueAddToSet( button_exp_queue, common_queue_set );
+			gpio_exp_add_isr(gpio_exp_isr_handler, button_exp_timer, expander);
+		}	
 	}
-	
-	// only create timers and ISR is this is not a polled gpio
-	if (gpio != -1) {
-		gpio_isr_handler_add(gpio, gpio_isr_handler, (void*) &buttons[n_buttons]);
-		gpio_intr_enable(gpio);
-	}	
 
 	n_buttons++;
 }	
@@ -363,7 +424,7 @@ void *button_remap(void *client, int gpio, button_handler handler, int long_pres
 }
 
 /****************************************************************************************
- * Create rotary encoder
+ * Rotary encoder handler
  */
 static void rotary_button_handler(void *id, button_event_e event, button_press_e mode, bool long_press) {
 	ESP_LOGI(TAG, "Rotary push-button %d", event);

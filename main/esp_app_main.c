@@ -390,12 +390,15 @@ void register_default_nvs(){
 	
 	ESP_LOGD(TAG,"Registering default value for key %s", "dac_config");
 	config_set_default(NVS_TYPE_STR, "dac_config", "", 0);
-	//todo: add dac_config for known targets
+	
 	ESP_LOGD(TAG,"Registering default value for key %s", "dac_controlset");
 	config_set_default(NVS_TYPE_STR, "dac_controlset", "", 0);
 	
 	ESP_LOGD(TAG,"Registering default value for key %s", "jack_mutes_amp");
 	config_set_default(NVS_TYPE_STR, "jack_mutes_amp", "n", 0);
+
+	ESP_LOGD(TAG,"Registering default value for key %s", "gpio_exp_config");
+	config_set_default(NVS_TYPE_STR, "gpio_exp_config", CONFIG_GPIO_EXP_CONFIG, 0);
 	
 	ESP_LOGD(TAG,"Registering default value for key %s", "bat_config");
 	config_set_default(NVS_TYPE_STR, "bat_config", "", 0);

@@ -100,6 +100,10 @@ void services_init(void) {
 		ESP_LOGW(TAG, "no SPI configured");
 	}	
 
+	// create GPIO expander
+	const gpio_exp_config_t * gpio_exp_config = config_gpio_exp_get();
+	if (gpio_exp_config) gpio_exp_create(gpio_exp_config);
+
 	// system-wide PWM timer configuration
 	ledc_timer_config_t pwm_timer = {
 		.duty_resolution = LEDC_TIMER_13_BIT, 

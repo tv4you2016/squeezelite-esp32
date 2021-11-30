@@ -88,6 +88,9 @@ menu "Squeezelite-ESP32"
 			string
 			default "bck=33,ws=25,do=15" if SQUEEZEAMP
 			default	""
+		config GPIO_EXP_CONFIG		
+			string
+			default	""
 		config SPI_CONFIG
 			string
 			default "dc=27,data=19,clk=18" if TWATCH2020		
@@ -333,6 +336,11 @@ menu "Squeezelite-ESP32"
 			help
 				Set GPIO for rotary encoder (quadrature phase). See README on SqueezeESP32 project's GitHub for more details
 				A=<gpio>,B=<gpio>[,SW=gpio>[[,knobonly[=<ms>]|[,volume][,longpress]]			
+		config GPIO_EXP_CONFIG
+			string "GPIO expander configuration"
+			help
+				Set parameters of GPIO extender
+				model=<model>[,addr=<addr>][,base=<100..N>][,count=<0..32>][,intr=<gpio>][,port=dac|system]				
 	endmenu
 	menu "LED configuration"
 		visible if !SQUEEZEAMP && !TWATCH2020
