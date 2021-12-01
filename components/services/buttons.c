@@ -31,7 +31,7 @@ static const char * TAG = "buttons";
 static int n_buttons = 0;
 
 #define BUTTON_STACK_SIZE	4096
-#define MAX_BUTTONS			16
+#define MAX_BUTTONS			32
 #define DEBOUNCE			50
 #define BUTTON_QUEUE_LEN	10
 
@@ -127,7 +127,7 @@ static BaseType_t IRAM_ATTR gpio_exp_isr_handler(void* arg)
 static void buttons_exp_timer_handler( TimerHandle_t xTimer ) {
 	struct gpio_exp_s *expander = (struct gpio_exp_s*) pvTimerGetTimerID (xTimer);
 	xQueueSend(button_exp_queue, &expander, 0);
-	ESP_LOGI(TAG, "Button expander base %u debounced", gpio_exp_base(expander));
+	ESP_LOGD(TAG, "Button expander base %u debounced", gpio_exp_get_base(expander));
 }
 
 /****************************************************************************************
@@ -267,6 +267,8 @@ void dummy_handler(void *id, button_event_e event, button_press_e press) {
  * Create buttons 
  */
 void button_create(void *client, int gpio, int type, bool pull, int debounce, button_handler handler, int long_press, int shifter_gpio) { 
+	struct gpio_exp_s *expander;
+
 	if (n_buttons >= MAX_BUTTONS) return;
 
 	ESP_LOGI(TAG, "Creating button using GPIO %u, type %u, pull-up/down %u, long press %u shifter %d", gpio, type, pull, long_press, shifter_gpio);
@@ -306,7 +308,7 @@ void button_create(void *client, int gpio, int type, bool pull, int debounce, bu
 	}
 
 	// creation is different is this is a native or an expanded GPIO
-	if (gpio < GPIO_EXP_BASE_MIN) {
+	if (gpio < GPIO_NUM_MAX) {
 		gpio_pad_select_gpio(gpio);
 		gpio_set_direction(gpio, GPIO_MODE_INPUT);
 
@@ -345,9 +347,9 @@ void button_create(void *client, int gpio, int type, bool pull, int debounce, bu
 			gpio_isr_handler_add(gpio, gpio_isr_handler, (void*) &buttons[n_buttons]);
 			gpio_intr_enable(gpio);
 		}	
-	} else {
+	} else if ((expander = gpio_exp_get_expander(gpio)) != NULL) {
 		// set GPIO as an ouptut and acquire value
-		struct gpio_exp_s *expander = gpio_exp_set_direction(gpio, GPIO_MODE_INPUT, NULL);
+		gpio_exp_set_direction(gpio, GPIO_MODE_INPUT, expander);
 		buttons[n_buttons].level = gpio_exp_get_level(gpio, 0, expander);
 
 		// create queue and timer for GPIO expander
@@ -357,6 +359,8 @@ void button_create(void *client, int gpio, int type, bool pull, int debounce, bu
 			xQueueAddToSet( button_exp_queue, common_queue_set );
 			gpio_exp_add_isr(gpio_exp_isr_handler, button_exp_timer, expander);
 		}	
+	} else {
+		ESP_LOGE(TAG, "Can't create button, GPIO %d does not exist", gpio);
 	}
 
 	n_buttons++;

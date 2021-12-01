@@ -37,15 +37,15 @@ typedef BaseType_t (*gpio_exp_isr)(void *arg);
 // set <intr> to -1 and <queue> to NULL if there is no interrupt
 struct gpio_exp_s* gpio_exp_create(const gpio_exp_config_t *config);
 bool               gpio_exp_add_isr(gpio_exp_isr isr, void *arg, struct gpio_exp_s *expander);
-uint32_t           gpio_exp_base(struct gpio_exp_s *expander);
-struct gpio_exp_s* gpio_exp_expander(int gpio);
+uint32_t           gpio_exp_get_base(struct gpio_exp_s *expander);
+struct gpio_exp_s* gpio_exp_get_expander(int gpio);
 
 /* For all functions below when <expander> is provided, GPIO's can be numbered from 0. If <expander>
    is NULL, then GPIO must start from base */
-struct gpio_exp_s* gpio_exp_set_direction(int gpio, gpio_mode_t mode, struct gpio_exp_s *expander);
-esp_err_t          gpio_exp_set_pull_mode(int gpio, gpio_pull_mode_t mode, struct gpio_exp_s *expander);
-int                gpio_exp_get_level(int gpio, uint32_t age, struct gpio_exp_s *expander);
-esp_err_t          gpio_exp_set_level(int gpio, int level, bool direct, struct gpio_exp_s *expander);
+esp_err_t	gpio_exp_set_direction(int gpio, gpio_mode_t mode, struct gpio_exp_s *expander);
+esp_err_t   gpio_exp_set_pull_mode(int gpio, gpio_pull_mode_t mode, struct gpio_exp_s *expander);
+int         gpio_exp_get_level(int gpio, uint32_t age, struct gpio_exp_s *expander);
+esp_err_t   gpio_exp_set_level(int gpio, int level, bool direct, struct gpio_exp_s *expander);
 
 /* This can be called to enumerate modified GPIO since last read. Note that <enumerator>
    can be NULL to initialize all GPIOs */

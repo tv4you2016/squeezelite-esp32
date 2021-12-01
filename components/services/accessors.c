@@ -494,7 +494,7 @@ const gpio_exp_config_t* config_gpio_exp_get(void) {
 	config.phy.port = i2c_system_port;
 
 	nvs_item = config_alloc_get(NVS_TYPE_STR, "gpio_exp_config");
-	if (!nvs_item) return NULL;
+	if (!nvs_item || !*nvs_item) return NULL;
 	
 	if ((p = strcasestr(nvs_item, "addr")) != NULL) config.phy.addr = atoi(strchr(p, '=') + 1);
 	if ((p = strcasestr(nvs_item, "intr")) != NULL) config.intr = atoi(strchr(p, '=') + 1);

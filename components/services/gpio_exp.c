@@ -84,14 +84,14 @@ static EXT_RAM_ATTR struct gpio_exp_s {
 /******************************************************************************
  * Retrieve base from an expander reference
  */
-uint32_t gpio_exp_base(struct gpio_exp_s *expander) { 
+uint32_t gpio_exp_get_base(struct gpio_exp_s *expander) { 
 	return expander->first; 
 }
 
 /******************************************************************************
  * Retrieve reference from a GPIO
  */
-struct gpio_exp_s *gpio_exp_expander(int gpio) { 
+struct gpio_exp_s *gpio_exp_get_expander(int gpio) { 
 	int _gpio = gpio;
 	return find_expander(NULL, &_gpio);
 }
@@ -159,7 +159,7 @@ struct gpio_exp_s* gpio_exp_create(const gpio_exp_config_t *config) {
 		gpio_intr_enable(config->intr);						
 	}
 	
-	ESP_LOGI(TAG, "Create GPIO expander at base %u with INT %u at @%x", config->base, config->intr, config->phy.addr);
+	ESP_LOGI(TAG, "Create GPIO expander at base %u with INT %u at @%x on port %d", config->base, config->intr, config->phy.addr, config->phy.port);
 	return expander;
 }
 
@@ -187,10 +187,9 @@ bool gpio_exp_add_isr(gpio_exp_isr isr, void *arg, struct gpio_exp_s *expander) 
 /******************************************************************************
  * Set GPIO direction
  */
-struct gpio_exp_s* gpio_exp_set_direction(int gpio, gpio_mode_t mode, struct gpio_exp_s *expander) {
-	if ((expander = find_expander(expander, &gpio)) == NULL) return NULL;
+esp_err_t gpio_exp_set_direction(int gpio, gpio_mode_t mode, struct gpio_exp_s *expander) {
+	if ((expander = find_expander(expander, &gpio)) == NULL) return ESP_ERR_INVALID_ARG;
 
-int64_t v = esp_timer_get_time();
 	xSemaphoreTake(expander->mutex, pdMS_TO_TICKS(portMAX_DELAY));
 
 	if (mode == GPIO_MODE_INPUT) {
@@ -203,15 +202,14 @@ int64_t v = esp_timer_get_time();
 	if (expander->r_mask & expander->w_mask) {
 		xSemaphoreGive(expander->mutex);
 		ESP_LOGE(TAG, "GPIO %d on expander base %u can't be r/w", gpio, expander->first);
-		return false;
+		return ESP_ERR_INVALID_ARG;
 	}
 	
 	// most expanders want unconfigured GPIO to be set to output
 	if (expander->model->set_direction) expander->model->set_direction(&expander->phy, expander->r_mask, expander->w_mask);
 
 	xSemaphoreGive(expander->mutex);
-ESP_LOGW(TAG, "set took %lld µs", esp_timer_get_time() - v);
-	return expander;
+	return ESP_OK;
 }	
 
 /******************************************************************************
@@ -311,9 +309,9 @@ esp_err_t gpio_set_pull_mode_u(int gpio, gpio_pull_mode_t mode) {
 	return gpio_exp_set_pull_mode(gpio, mode, NULL);
 }
 
-esp_err_t	gpio_set_direction_u(int gpio, gpio_mode_t mode) {
+esp_err_t gpio_set_direction_u(int gpio, gpio_mode_t mode) {
 	if (gpio < GPIO_EXP_BASE_MIN) return gpio_set_direction(gpio, mode);
-	return gpio_exp_set_direction(gpio, mode, NULL) ? ESP_OK : ESP_ERR_INVALID_ARG;
+	return gpio_exp_set_direction(gpio, mode, NULL);
 }
 
 int gpio_get_level_u(int gpio) {

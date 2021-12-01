@@ -92,7 +92,7 @@ void display_init(char *welcome) {
 		if ((p = strcasestr(config, "reset")) != NULL) RST_pin = atoi(strchr(p, '=') + 1);
 		
 		// Detect driver interface
-		if (strstr(config, "I2C") && i2c_system_port != -1) {
+		if (strcasestr(config, "I2C") && i2c_system_port != -1) {
 			int address = 0x3C;
 				
 			if ((p = strcasestr(config, "address")) != NULL) address = atoi(strchr(p, '=') + 1);
@@ -102,7 +102,7 @@ void display_init(char *welcome) {
 			GDS_I2CAttachDevice( display, width, height, address, RST_pin, backlight_pin );
 		
 			ESP_LOGI(TAG, "Display is I2C on port %u", address);
-		} else if (strstr(config, "SPI") && spi_system_host != -1) {
+		} else if (strcasestr(config, "SPI") && spi_system_host != -1) {
 			int CS_pin = -1, speed = 0;
 		
 			if ((p = strcasestr(config, "cs")) != NULL) CS_pin = atoi(strchr(p, '=') + 1);
