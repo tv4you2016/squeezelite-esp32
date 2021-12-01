@@ -606,7 +606,8 @@ const spi_bus_config_t * config_spi_get(spi_host_device_t * spi_host) {
 		if ((p = strcasestr(nvs_item, "miso")) != NULL) spi.miso_io_num = atoi(strchr(p, '=') + 1);
 		if ((p = strcasestr(nvs_item, "clk")) != NULL) spi.sclk_io_num = atoi(strchr(p, '=') + 1);
 		if ((p = strcasestr(nvs_item, "dc")) != NULL) spi_system_dc_gpio = atoi(strchr(p, '=') + 1);
-		if ((p = strcasestr(nvs_item, "host")) != NULL) spi_system_host = atoi(strchr(p, '=') + 1);
+		// only VSPI (1) can be used as Flash and PSRAM run at 80MHz
+		// if ((p = strcasestr(nvs_item, "host")) != NULL) spi_system_host = atoi(strchr(p, '=') + 1);
 		free(nvs_item);
 	}
 	if(spi_host) *spi_host = spi_system_host;
