@@ -140,9 +140,9 @@ sda=<gpio>,scl=<gpio>[,port=0|1][,speed=<speed>]
 ### SPI
 The esp32 has 4 SPI sub-systems, one is unaccessible so numbering is 0..2 and SPI0 is reserved for Flash/PSRAM. The NVS parameter "spi_config" set the spi's gpio used for generic purpose (e.g. display). Leave it blank to disable SPI usage. The DC parameter is needed for displays. Syntax is
 ```
-data|mosi=<gpio>,clk=<gpio>[,dc=<gpio>][,host=1|2][,miso=<gpio>]
+data|mosi=<gpio>,clk=<gpio>[,dc=<gpio>][,host=1][,miso=<gpio>]
 ``` 
-Default "host" is 1. The "miso" parameter is only used when SPI bus is to be shared with other peripheral (e.g. ethernet, see below), otherwise it can be omitted. Note that "data" can also be named "mosi". 
+Default and only "host" is 1 as others are used already by flash and spiram. The "miso" parameter is only used when SPI bus is to be shared with other peripheral (e.g. ethernet, see below), otherwise it can be omitted. Note that "data" can also be named "mosi". 
 ### DAC/I2S
 The NVS parameter "dac_config" set the gpio used for i2s communication with your DAC. You can define the defaults at compile time but nvs parameter takes precedence except for SqueezeAMP and A1S where these are forced at runtime. Syntax is
 ```
@@ -258,7 +258,7 @@ Each expander (ONLY ONE FOR NOW) can support up to 32 GPIO. To use an expander f
 
 The parameter "gpio_exp_config" supports the following syntax:
 ```
-model=<model>,addr=<addr>,[,port=<system|dac>][,base=<n|100>][,count=<n|16>][,intr=<gpio>]
+model=<model>,addr=<addr>,[,port=system|dac][,base=<n>|100][,count=<n>|16][,intr=<gpio>]
 ```	
 - model: pca9535 (only tested today), pca85xx (untested) and mcp23017 (soon)
 - addr: inthe i2c address decimal 	
