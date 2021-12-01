@@ -489,7 +489,8 @@ const gpio_exp_config_t* config_gpio_exp_get(void) {
 	char *nvs_item, *p;
 	static gpio_exp_config_t config = {
 		.intr = -1,
-		.count = 8,	
+		.count = 16,	
+		.base = GPIO_NUM_MAX,
 	};
 	config.phy.port = i2c_system_port;
 
