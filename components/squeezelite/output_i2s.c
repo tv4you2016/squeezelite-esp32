@@ -370,10 +370,11 @@ void output_init_i2s(log_level level, char *device, unsigned output_buf_size, ch
 	
 	// memory still used but at least task is not created
 	if (stats) {
-		static DRAM_ATTR StaticTask_t xTaskBuffer __attribute__ ((aligned (4)));
+		// we allocate TCB but stack is staic to avoid SPIRAM fragmentation
+		StaticTask_t* xTaskBuffer = (StaticTask_t*) heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 		static EXT_RAM_ATTR StackType_t xStack[STAT_STACK_SIZE] __attribute__ ((aligned (4)));
 		stats_task = xTaskCreateStatic( (TaskFunction_t) output_thread_i2s_stats, "output_i2s_sts", STAT_STACK_SIZE, 
-										 NULL, ESP_TASK_PRIO_MIN, xStack, &xTaskBuffer);
+										 NULL, ESP_TASK_PRIO_MIN, xStack, xTaskBuffer);
 	}	
 }
 

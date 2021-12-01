@@ -43,10 +43,16 @@ struct gpio_exp_s* gpio_exp_expander(int gpio);
 /* For all functions below when <expander> is provided, GPIO's can be numbered from 0. If <expander>
    is NULL, then GPIO must start from base */
 struct gpio_exp_s* gpio_exp_set_direction(int gpio, gpio_mode_t mode, struct gpio_exp_s *expander);
-void               gpio_exp_set_pull_mode(int gpio, gpio_pull_mode_t mode, struct gpio_exp_s *expander);
+esp_err_t          gpio_exp_set_pull_mode(int gpio, gpio_pull_mode_t mode, struct gpio_exp_s *expander);
 int                gpio_exp_get_level(int gpio, uint32_t age, struct gpio_exp_s *expander);
-void               gpio_exp_set_level(int gpio, int level, struct gpio_exp_s *expander);
+esp_err_t          gpio_exp_set_level(int gpio, int level, bool direct, struct gpio_exp_s *expander);
 
 /* This can be called to enumerate modified GPIO since last read. Note that <enumerator>
    can be NULL to initialize all GPIOs */
 void               gpio_exp_enumerate(gpio_exp_enumerator enumerator, struct gpio_exp_s *expander);
+
+// option to use either built-in or expanded GPIO
+esp_err_t	gpio_set_direction_u(int gpio, gpio_mode_t mode);
+esp_err_t   gpio_set_pull_mode_u(int gpio, gpio_pull_mode_t mode);
+int         gpio_get_level_u(int gpio);
+esp_err_t   gpio_set_level_u(int gpio, int level);
