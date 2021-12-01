@@ -43,6 +43,7 @@ sure that using rate_delay would fix that
 #include "led.h"
 #include "monitor.h"
 #include "platform_config.h"
+#include "gpio_exp.h"
 #include "accessors.h"
 #include "equalizer.h"
 #include "globdefs.h"
@@ -131,10 +132,10 @@ static bool handler(u8_t *data, int len){
 			
 			if (jack_mutes_amp && jack_inserted_svc()) {
 				adac->speaker(false);
-				if (amp_control.gpio != -1) gpio_set_level(amp_control.gpio, !amp_control.active);
+				if (amp_control.gpio != -1) gpio_set_level_u(amp_control.gpio, !amp_control.active);
 			} else {
 				adac->speaker(true);
-				if (amp_control.gpio != -1) gpio_set_level(amp_control.gpio, amp_control.active);
+				if (amp_control.gpio != -1) gpio_set_level_u(amp_control.gpio, amp_control.active);
 			}	
 		}
 
@@ -157,7 +158,7 @@ static void jack_handler(bool inserted) {
 	if (jack_mutes_amp) {
 		LOG_INFO("switching amplifier %s", inserted ? "OFF" : "ON");
 		adac->speaker(!inserted);
-		if (amp_control.gpio != -1) gpio_set_level(amp_control.gpio, inserted ? !amp_control.active : amp_control.active);
+		if (amp_control.gpio != -1) gpio_set_level_u(amp_control.gpio, inserted ? !amp_control.active : amp_control.active);
 	}
 	
 	// activate headset
@@ -179,7 +180,7 @@ static void set_amp_gpio(int gpio, char *value) {
 		
 		gpio_pad_select_gpio(amp_control.gpio);
 		gpio_set_direction(amp_control.gpio, GPIO_MODE_OUTPUT);
-		gpio_set_level(amp_control.gpio, !amp_control.active);
+		gpio_set_level_u(amp_control.gpio, !amp_control.active);
 		
 		LOG_INFO("setting amplifier GPIO %d (active:%d)", amp_control.gpio, amp_control.active);
 	}	
@@ -455,14 +456,14 @@ static void output_thread_i2s(void *arg) {
 			LOG_INFO("Output state is %d", output.state);
 			if (output.state == OUTPUT_OFF) {
 				led_blink(LED_GREEN, 100, 2500);
-				if (amp_control.gpio != -1) gpio_set_level(amp_control.gpio, !amp_control.active);
+				if (amp_control.gpio != -1) gpio_set_level_u(amp_control.gpio, !amp_control.active);
 				LOG_INFO("switching off amp GPIO %d", amp_control.gpio);
 			} else if (output.state == OUTPUT_STOPPED) {
 				adac->speaker(false);
 				led_blink(LED_GREEN, 200, 1000);
 			} else if (output.state == OUTPUT_RUNNING) {
 				if (!jack_mutes_amp || !jack_inserted_svc()) {
-					if (amp_control.gpio != -1) gpio_set_level(amp_control.gpio, amp_control.active);
+					if (amp_control.gpio != -1) gpio_set_level_u(amp_control.gpio, amp_control.active);
 					adac->speaker(true);
 				}	
 				led_on(LED_GREEN);

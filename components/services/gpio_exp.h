@@ -12,8 +12,6 @@
 #include "freertos/FreeRTOS.h"
 #include "driver/gpio.h"
 
-#define GPIO_EXP_BASE_MIN	100
-
 struct gpio_exp_s;
 
 typedef struct {

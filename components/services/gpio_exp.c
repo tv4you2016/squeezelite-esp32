@@ -102,8 +102,8 @@ struct gpio_exp_s *gpio_exp_get_expander(int gpio) {
 struct gpio_exp_s* gpio_exp_create(const gpio_exp_config_t *config) {
 	struct gpio_exp_s *expander = expanders + n_expanders;
 	
-	if (config->base < GPIO_EXP_BASE_MIN || n_expanders == sizeof(expanders)/sizeof(struct gpio_exp_s)) {
-		ESP_LOGE(TAG, "Base %d GPIO must be > %d for %s or too many expanders %d", config->base, GPIO_EXP_BASE_MIN, config->model, n_expanders);
+	if (config->base < GPIO_NUM_MAX || n_expanders == sizeof(expanders)/sizeof(struct gpio_exp_s)) {
+		ESP_LOGE(TAG, "Base %d GPIO must be at least %d for %s or too many expanders %d", config->base, GPIO_NUM_MAX, config->model, n_expanders);
 		return NULL;
 	}
 
@@ -305,22 +305,22 @@ void gpio_exp_enumerate(gpio_exp_enumerator enumerator, struct gpio_exp_s *expan
  * Wrapper function
  */
 esp_err_t gpio_set_pull_mode_u(int gpio, gpio_pull_mode_t mode) {
-	if (gpio < GPIO_EXP_BASE_MIN) return gpio_set_pull_mode(gpio, mode);
+	if (gpio < GPIO_NUM_MAX) return gpio_set_pull_mode(gpio, mode);
 	return gpio_exp_set_pull_mode(gpio, mode, NULL);
 }
 
 esp_err_t gpio_set_direction_u(int gpio, gpio_mode_t mode) {
-	if (gpio < GPIO_EXP_BASE_MIN) return gpio_set_direction(gpio, mode);
+	if (gpio < GPIO_NUM_MAX) return gpio_set_direction(gpio, mode);
 	return gpio_exp_set_direction(gpio, mode, NULL);
 }
 
 int gpio_get_level_u(int gpio) {
-	if (gpio < GPIO_EXP_BASE_MIN) return gpio_get_level(gpio);
+	if (gpio < GPIO_NUM_MAX) return gpio_get_level(gpio);
 	return gpio_exp_get_level(gpio, 50, NULL);
 }
 
 esp_err_t gpio_set_level_u(int gpio, int level) {
-	if (gpio < GPIO_EXP_BASE_MIN) return gpio_set_level(gpio, level);
+	if (gpio < GPIO_NUM_MAX) return gpio_set_level(gpio, level);
 	return gpio_exp_set_level(gpio, level, false, NULL);
 }
 

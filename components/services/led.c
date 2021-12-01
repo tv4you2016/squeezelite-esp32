@@ -19,6 +19,7 @@
 #include "driver/gpio.h"
 #include "driver/ledc.h"
 #include "platform_config.h"
+#include "gpio_exp.h"
 #include "led.h"
 #include "globdefs.h"
 #include "accessors.h"
@@ -54,7 +55,7 @@ static int led_max = 2;
  * 
  */
 static void set_level(struct led_s *led, bool on) {
-	if (led->pwm < 0) gpio_set_level(led->gpio, on ? led->onstate : !led->onstate);
+	if (led->pwm < 0 || led->gpio >= GPIO_NUM_MAX) gpio_set_level_u(led->gpio, on ? led->onstate : !led->onstate);
 	else {
 		ledc_set_duty(LEDC_HIGH_SPEED_MODE, led->channel, on ? led->pwm : (led->onstate ? 0 : pwm_system.max));
 		ledc_update_duty(LEDC_HIGH_SPEED_MODE, led->channel);

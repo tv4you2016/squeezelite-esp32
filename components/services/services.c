@@ -12,6 +12,7 @@
 #include "driver/ledc.h"
 #include "driver/i2c.h"
 #include "platform_config.h"
+#include "gpio_exp.h"
 #include "battery.h"
 #include "led.h"
 #include "monitor.h"
@@ -44,12 +45,12 @@ void set_power_gpio(int gpio, char *value) {
 	if (!strcasecmp(value, "vcc") ) {
 		gpio_pad_select_gpio(gpio);
 		gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
-		gpio_set_level(gpio, 1);
+		gpio_set_level_u(gpio, 1);
 	} else if (!strcasecmp(value, "gnd")) {
 		gpio_pad_select_gpio(gpio);
 		gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
-		gpio_set_level(gpio, 0);
-	} else parsed = false	;
+		gpio_set_level_u(gpio, 0);
+	} else parsed = false;
 	
 	if (parsed) ESP_LOGI(TAG, "set GPIO %u to %s", gpio, value);
  }	
@@ -69,7 +70,11 @@ void services_init(void) {
 	}
 #endif
 
-	// set potential power GPIO
+	// create GPIO expander
+	const gpio_exp_config_t * gpio_exp_config = config_gpio_exp_get();
+	if (gpio_exp_config) gpio_exp_create(gpio_exp_config);
+
+	// set potential power GPIO (a GPIO-powered expander might be an issue)
 	parse_set_GPIO(set_power_gpio);
 
 	// shared I2C bus 
@@ -99,10 +104,6 @@ void services_init(void) {
 		spi_system_host = -1;
 		ESP_LOGW(TAG, "no SPI configured");
 	}	
-
-	// create GPIO expander
-	const gpio_exp_config_t * gpio_exp_config = config_gpio_exp_get();
-	if (gpio_exp_config) gpio_exp_create(gpio_exp_config);
 
 	// system-wide PWM timer configuration
 	ledc_timer_config_t pwm_timer = {
