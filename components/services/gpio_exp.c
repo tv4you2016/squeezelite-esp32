@@ -131,8 +131,8 @@ struct gpio_exp_s* gpio_exp_create(const gpio_exp_config_t *config) {
 		StaticTask_t* xTaskBuffer = (StaticTask_t*) heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 		static EXT_RAM_ATTR StackType_t xStack[2*1024] __attribute__ ((aligned (4)));
 
-		xTaskCreateStatic(async_handler, "gpio_expander", sizeof(xStack), NULL, ESP_TASK_PRIO_MIN + 1, xStack, xTaskBuffer);
 		async_queue = xQueueCreate(4, sizeof(async_request_t));
+		xTaskCreateStatic(async_handler, "gpio_expander", sizeof(xStack), NULL, ESP_TASK_PRIO_MIN + 1, xStack, xTaskBuffer);
 	}
 
 	// set interrupt if possible
