@@ -43,12 +43,12 @@ void set_power_gpio(int gpio, char *value) {
 	bool parsed = true;
 	
 	if (!strcasecmp(value, "vcc") ) {
-		gpio_pad_select_gpio(gpio);
-		gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
+		if (gpio < GPIO_NUM_MAX) gpio_pad_select_gpio(gpio);
+		gpio_set_direction_u(gpio, GPIO_MODE_OUTPUT);
 		gpio_set_level_u(gpio, 1);
 	} else if (!strcasecmp(value, "gnd")) {
-		gpio_pad_select_gpio(gpio);
-		gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
+		if (gpio < GPIO_NUM_MAX) gpio_pad_select_gpio(gpio);
+		gpio_set_direction_u(gpio, GPIO_MODE_OUTPUT);
 		gpio_set_level_u(gpio, 0);
 	} else parsed = false;
 	

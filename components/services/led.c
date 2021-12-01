@@ -181,9 +181,9 @@ bool led_config(int idx, gpio_num_t gpio, int onstate, int pwm) {
 	leds[idx].onstate = onstate;
 	leds[idx].pwm = -1;
 
-	if (pwm < 0) {	
-		gpio_pad_select_gpio(gpio);
-		gpio_set_direction(gpio, GPIO_MODE_OUTPUT);
+	if (pwm < 0 || gpio >= GPIO_NUM_MAX) {	
+		if (gpio < GPIO_NUM_MAX) gpio_pad_select_gpio(gpio);
+		gpio_set_direction_u(gpio, GPIO_MODE_OUTPUT);
 	} else {	
 		leds[idx].channel = pwm_system.base_channel++;
 		leds[idx].pwm = pwm_system.max * powf(pwm / 100.0, 3);

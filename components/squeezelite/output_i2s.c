@@ -178,8 +178,8 @@ static void set_amp_gpio(int gpio, char *value) {
 		amp_control.gpio = gpio;
 		if ((p = strchr(value, ':')) != NULL) amp_control.active = atoi(p + 1);
 		
-		gpio_pad_select_gpio(amp_control.gpio);
-		gpio_set_direction(amp_control.gpio, GPIO_MODE_OUTPUT);
+		if (amp_control.gpio < GPIO_NUM_MAX) gpio_pad_select_gpio(amp_control.gpio);
+		gpio_set_direction_u(amp_control.gpio, GPIO_MODE_OUTPUT);
 		gpio_set_level_u(amp_control.gpio, !amp_control.active);
 		
 		LOG_INFO("setting amplifier GPIO %d (active:%d)", amp_control.gpio, amp_control.active);
