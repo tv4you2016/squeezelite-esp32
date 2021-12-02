@@ -17,17 +17,46 @@
 #include "driver/i2c.h"
 #include "gpio_exp.h"
 
+typedef struct gpio_exp_s {
+	uint32_t first, last;
+	union gpio_exp_phy_u phy;
+	uint32_t shadow;
+	TickType_t age;
+	SemaphoreHandle_t mutex;
+	uint32_t r_mask, w_mask;
+	uint32_t pullup, pulldown;
+	struct {
+		gpio_exp_isr handler;
+		void *arg;
+	} isr[4];
+	struct gpio_exp_model_s const *model;
+} gpio_exp_t;
+
+typedef struct {
+	enum { ASYNC_WRITE } type;
+	int gpio;
+	int level;
+	gpio_exp_t *expander;
+} async_request_t;
+
 static const char TAG[] = "gpio expander";
 
 static void   IRAM_ATTR intr_isr_handler(void* arg);
-static struct gpio_exp_s* find_expander(struct gpio_exp_s *expander, int *gpio);
+static gpio_exp_t* find_expander(gpio_exp_t *expander, int *gpio);
 
-static void   pca9535_set_direction(union gpio_exp_phy_u*, uint32_t, uint32_t);
-static int    pca9535_read(union gpio_exp_phy_u*);
-static void   pca9535_write(union gpio_exp_phy_u*, uint32_t, uint32_t);
-static void   pca85xx_set_direction(union gpio_exp_phy_u*, uint32_t, uint32_t);
-static int    pca85xx_read(union gpio_exp_phy_u*);
-static void   pca85xx_write(union gpio_exp_phy_u*, uint32_t, uint32_t);
+static void   pca9535_set_direction(gpio_exp_t* self);
+static int    pca9535_read(gpio_exp_t* self);
+static void   pca9535_write(gpio_exp_t* self);
+
+static void   pca85xx_set_direction(gpio_exp_t* self);
+static int    pca85xx_read(gpio_exp_t* self);
+static void   pca85xx_write(gpio_exp_t* self);
+
+static void   mcp23017_init(gpio_exp_t* self);
+static void   mcp23017_set_pull_mode(gpio_exp_t* self);
+static void   mcp23017_set_direction(gpio_exp_t* self);
+static int    mcp23017_read(gpio_exp_t* self);
+static void   mcp23017_write(gpio_exp_t* self);
 
 static void   async_handler(void *arg);
 
@@ -36,21 +65,14 @@ static uint8_t   i2c_read_byte(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg);
 static uint16_t  i2c_read_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg);
 static esp_err_t i2c_write_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg, uint16_t data);
 
-typedef struct {
-	enum { ASYNC_WRITE } type;
-	int gpio;
-	int level;
-	struct gpio_exp_s *expander;
-} async_request_t;
-
 static const struct gpio_exp_model_s {
 	char *model;
 	gpio_int_type_t trigger;
-	void (*init)(union gpio_exp_phy_u*);
-	int  (*read)(union gpio_exp_phy_u*);
-	void (*write)(union gpio_exp_phy_u*, uint32_t r_mask, uint32_t shadow);
-	void (*set_direction)(union gpio_exp_phy_u*, uint32_t r_mask, uint32_t w_mask);
-	void (*set_pull_mode)(int, gpio_pull_mode_t);
+	void (*init)(gpio_exp_t* self);
+	int  (*read)(gpio_exp_t* self);
+	void (*write)(gpio_exp_t* self);
+	void (*set_direction)(gpio_exp_t* self);
+	void (*set_pull_mode)(gpio_exp_t* self);
 } registered[] = {
 	{ .model = "pca9535",
 	  .trigger = GPIO_INTR_NEGEDGE, 
@@ -61,37 +83,31 @@ static const struct gpio_exp_model_s {
 	  .trigger = GPIO_INTR_NEGEDGE, 
 	  .set_direction = pca85xx_set_direction,
 	  .read = pca85xx_read,
-	  .write = pca85xx_write, }
+	  .write = pca85xx_write, },
+	{ .model = "mcp23017",
+	  .trigger = GPIO_INTR_NEGEDGE, 
+	  .init = mcp23017_init,
+	  .set_direction = mcp23017_set_direction,
+	  .set_pull_mode = mcp23017_set_pull_mode,
+	  .read = mcp23017_read,
+	  .write = mcp23017_write, },
 };
 
 static EXT_RAM_ATTR uint8_t n_expanders;
 static EXT_RAM_ATTR QueueHandle_t async_queue;
-
-static EXT_RAM_ATTR struct gpio_exp_s {
-	uint32_t first, last;
-	union gpio_exp_phy_u phy;
-	uint32_t shadow;
-	TickType_t age;
-	SemaphoreHandle_t mutex;
-	uint32_t r_mask, w_mask;
-	struct {
-		gpio_exp_isr handler;
-		void *arg;
-	} isr[4];
-	struct gpio_exp_model_s const *model;
-} expanders[4];
+static EXT_RAM_ATTR gpio_exp_t expanders[4];
 
 /******************************************************************************
  * Retrieve base from an expander reference
  */
-uint32_t gpio_exp_get_base(struct gpio_exp_s *expander) { 
+uint32_t gpio_exp_get_base(gpio_exp_t *expander) { 
 	return expander->first; 
 }
 
 /******************************************************************************
  * Retrieve reference from a GPIO
  */
-struct gpio_exp_s *gpio_exp_get_expander(int gpio) { 
+gpio_exp_t *gpio_exp_get_expander(int gpio) { 
 	int _gpio = gpio;
 	return find_expander(NULL, &_gpio);
 }
@@ -99,10 +115,10 @@ struct gpio_exp_s *gpio_exp_get_expander(int gpio) {
 /******************************************************************************
  * Create an I2C expander
  */
-struct gpio_exp_s* gpio_exp_create(const gpio_exp_config_t *config) {
-	struct gpio_exp_s *expander = expanders + n_expanders;
+gpio_exp_t* gpio_exp_create(const gpio_exp_config_t *config) {
+	gpio_exp_t *expander = expanders + n_expanders;
 	
-	if (config->base < GPIO_NUM_MAX || n_expanders == sizeof(expanders)/sizeof(struct gpio_exp_s)) {
+	if (config->base < GPIO_NUM_MAX || n_expanders == sizeof(expanders)/sizeof(gpio_exp_t)) {
 		ESP_LOGE(TAG, "Base %d GPIO must be at least %d for %s or too many expanders %d", config->base, GPIO_NUM_MAX, config->model, n_expanders);
 		return NULL;
 	}
@@ -123,7 +139,7 @@ struct gpio_exp_s* gpio_exp_create(const gpio_exp_config_t *config) {
 	expander->last = config->base + config->count - 1;
 	expander->mutex = xSemaphoreCreateMutex();
 	memcpy(&expander->phy, &config->phy, sizeof(union gpio_exp_phy_u));
-	if (expander->model->init) expander->model->init(&expander->phy);
+	if (expander->model->init) expander->model->init(expander);
 
 	// create a task to handle asynchronous requests (only write at this time)
 	if (!async_queue) {
@@ -166,7 +182,7 @@ struct gpio_exp_s* gpio_exp_create(const gpio_exp_config_t *config) {
 /******************************************************************************
  * Add ISR handler
  */
-bool gpio_exp_add_isr(gpio_exp_isr isr, void *arg, struct gpio_exp_s *expander) {
+bool gpio_exp_add_isr(gpio_exp_isr isr, void *arg, gpio_exp_t *expander) {
 	xSemaphoreTake(expander->mutex, pdMS_TO_TICKS(portMAX_DELAY));
 
 	for (int i = 0; i < sizeof(expander->isr)/sizeof(*expander->isr); i++) {
@@ -187,7 +203,7 @@ bool gpio_exp_add_isr(gpio_exp_isr isr, void *arg, struct gpio_exp_s *expander) 
 /******************************************************************************
  * Set GPIO direction
  */
-esp_err_t gpio_exp_set_direction(int gpio, gpio_mode_t mode, struct gpio_exp_s *expander) {
+esp_err_t gpio_exp_set_direction(int gpio, gpio_mode_t mode, gpio_exp_t *expander) {
 	if ((expander = find_expander(expander, &gpio)) == NULL) return ESP_ERR_INVALID_ARG;
 
 	xSemaphoreTake(expander->mutex, pdMS_TO_TICKS(portMAX_DELAY));
@@ -206,7 +222,7 @@ esp_err_t gpio_exp_set_direction(int gpio, gpio_mode_t mode, struct gpio_exp_s *
 	}
 	
 	// most expanders want unconfigured GPIO to be set to output
-	if (expander->model->set_direction) expander->model->set_direction(&expander->phy, expander->r_mask, expander->w_mask);
+	if (expander->model->set_direction) expander->model->set_direction(expander);
 
 	xSemaphoreGive(expander->mutex);
 	return ESP_OK;
@@ -215,7 +231,7 @@ esp_err_t gpio_exp_set_direction(int gpio, gpio_mode_t mode, struct gpio_exp_s *
 /******************************************************************************
  * Get GPIO level with cache
  */
-int gpio_exp_get_level(int gpio, uint32_t age, struct gpio_exp_s *expander) {
+int gpio_exp_get_level(int gpio, uint32_t age, gpio_exp_t *expander) {
 	if ((expander = find_expander(expander, &gpio)) == NULL) return -1;
 	uint32_t now = xTaskGetTickCount();
 	
@@ -223,7 +239,7 @@ int gpio_exp_get_level(int gpio, uint32_t age, struct gpio_exp_s *expander) {
 	if (now - expander->age >= pdMS_TO_TICKS(age)) {
 		if (xSemaphoreTake(expander->mutex, pdMS_TO_TICKS(50)) == pdFALSE) return -1;
 
-		expander->shadow = expander->model->read(&expander->phy);
+		expander->shadow = expander->model->read(expander);
 		expander->age = now;
 
 		xSemaphoreGive(expander->mutex);
@@ -237,7 +253,7 @@ int gpio_exp_get_level(int gpio, uint32_t age, struct gpio_exp_s *expander) {
 /******************************************************************************
  * Set GPIO level with cache
  */
-esp_err_t gpio_exp_set_level(int gpio, int level, bool direct, struct gpio_exp_s *expander) {
+esp_err_t gpio_exp_set_level(int gpio, int level, bool direct, gpio_exp_t *expander) {
 	if ((expander = find_expander(expander, &gpio)) == NULL) return ESP_ERR_INVALID_ARG;
 	uint32_t mask = 1 << gpio;
 
@@ -256,7 +272,7 @@ esp_err_t gpio_exp_set_level(int gpio, int level, bool direct, struct gpio_exp_s
 		// only write if shadow not up to date
 		if ((mask ^ level) && expander->model->write) {
 			expander->shadow = (expander->shadow & ~(mask | level)) | level;
-			expander->model->write(&expander->phy, expander->r_mask, expander->shadow);
+			expander->model->write(expander);
 		}
 
 		xSemaphoreGive(expander->mutex);
@@ -272,9 +288,16 @@ esp_err_t gpio_exp_set_level(int gpio, int level, bool direct, struct gpio_exp_s
 /******************************************************************************
  * Set GPIO pullmode
  */
-esp_err_t gpio_exp_set_pull_mode(int gpio, gpio_pull_mode_t mode, struct gpio_exp_s *expander) {
+esp_err_t gpio_exp_set_pull_mode(int gpio, gpio_pull_mode_t mode, gpio_exp_t *expander) {
 	if ((expander = find_expander(expander, &gpio)) != NULL && expander->model->set_pull_mode) {
-		expander->model->set_pull_mode(gpio, mode);
+
+		expander->pullup &= ~(1 << gpio);
+		expander->pulldown &= ~(1 << gpio);
+
+		if (mode == GPIO_PULLUP_ONLY  || mode == GPIO_PULLUP_PULLDOWN) expander->pullup |= 1 << gpio;
+		if (mode == GPIO_PULLDOWN_ONLY || mode == GPIO_PULLUP_PULLDOWN) expander->pulldown |= 1 << gpio;
+
+		expander->model->set_pull_mode(expander);
 		return ESP_OK;
 	}
 	return ESP_ERR_INVALID_ARG;
@@ -283,8 +306,8 @@ esp_err_t gpio_exp_set_pull_mode(int gpio, gpio_pull_mode_t mode, struct gpio_ex
 /******************************************************************************
  * Enumerate modified GPIO
  */
-void gpio_exp_enumerate(gpio_exp_enumerator enumerator, struct gpio_exp_s *expander) {
-	uint32_t value = expander->model->read(&expander->phy) ^ expander->shadow;
+void gpio_exp_enumerate(gpio_exp_enumerator enumerator, gpio_exp_t *expander) {
+	uint32_t value = expander->model->read(expander) ^ expander->shadow;
 	uint8_t clz;
 	
 	// memorize newly read value and just update if requested
@@ -327,7 +350,7 @@ esp_err_t gpio_set_level_u(int gpio, int level) {
 /****************************************************************************************
  * Find the expander related to base
  */
-static struct gpio_exp_s* find_expander(struct gpio_exp_s *expander, int *gpio) {
+static gpio_exp_t* find_expander(gpio_exp_t *expander, int *gpio) {
 	for (int i = 0; !expander && i < n_expanders; i++) {
 		if (*gpio >= expanders[i].first && *gpio <= expanders[i].last) expander = expanders + i;
 	}
@@ -341,33 +364,68 @@ static struct gpio_exp_s* find_expander(struct gpio_exp_s *expander, int *gpio) 
 /****************************************************************************************
  * PCA9535 family : direction, read and write
  */
-static void pca9535_set_direction(union gpio_exp_phy_u *phy, uint32_t r_mask, uint32_t w_mask) {
-	i2c_write_word(phy->port, phy->addr, 0x06, r_mask);
+static void pca9535_set_direction(gpio_exp_t* self) {
+	i2c_write_word(self->phy.port, self->phy.addr, 0x06, self->r_mask);
 }
 
-static int pca9535_read(union gpio_exp_phy_u *phy) {
-	return i2c_read_word(phy->port, phy->addr, 0x00);
+static int pca9535_read(gpio_exp_t* self) {
+	return i2c_read_word(self->phy.port, self->phy.addr, 0x00);
 }
 
-static void pca9535_write(union gpio_exp_phy_u *phy, uint32_t r_mask, uint32_t shadow) {
-	i2c_write_word(phy->port, phy->addr, 0x02, shadow);
+static void pca9535_write(gpio_exp_t* self) {
+	i2c_write_word(self->phy.port, self->phy.addr, 0x02, self->shadow);
 }
 
 /****************************************************************************************
  * PCA85xx family : read and write
  */
-static void pca85xx_set_direction(union gpio_exp_phy_u *phy, uint32_t r_mask, uint32_t w_mask) {
+static void pca85xx_set_direction(gpio_exp_t* self) {
 	// all inputs must be set to 1 (open drain) and output are left open as well
-	i2c_write_word(phy->port, phy->addr, 0xff, r_mask | w_mask);
+	i2c_write_word(self->phy.port, self->phy.addr, 0xff, self->r_mask | self->w_mask);
 }
 
-static int pca85xx_read(union gpio_exp_phy_u *phy) {
-	return i2c_read_word(phy->port, phy->addr, 0xff);
+static int pca85xx_read(gpio_exp_t* self) {
+	return i2c_read_word(self->phy.port, self->phy.addr, 0xff);
 }
 
-static void pca85xx_write(union gpio_exp_phy_u *phy, uint32_t r_mask, uint32_t shadow) {
+static void pca85xx_write(gpio_exp_t* self) {
 	// all input must be set to 1 (open drain)
-	i2c_write_word(phy->port, phy->addr, 0xff, shadow | r_mask);
+	i2c_write_word(self->phy.port, self->phy.addr, 0xff, self->shadow | self->r_mask);
+}
+
+/****************************************************************************************
+ * MCP23017 family : init, direction, read and write
+ */
+static void mcp23017_init(gpio_exp_t* self) {
+	/*
+	0111 x10x = same bank, mirrot single int, no sequentµial, open drain, active low
+	not sure about this funny change of mapping of the control register itself, really?
+	*/
+	i2c_write_byte(self->phy.port, self->phy.addr, 0x05, 0x74);
+	i2c_write_byte(self->phy.port, self->phy.addr, 0x0a, 0x74);
+
+	// no interrupt on comparison or on change
+	i2c_write_word(self->phy.port, self->phy.addr, 0x04, 0x00);
+	i2c_write_word(self->phy.port, self->phy.addr, 0x08, 0x00);
+}
+
+static void mcp23017_set_direction(gpio_exp_t* self) {
+	// default to input and set real input to generate interrupt
+	i2c_write_word(self->phy.port, self->phy.addr, 0x00, ~self->w_mask);
+	i2c_write_word(self->phy.port, self->phy.addr, 0x04, self->r_mask);
+}
+
+static void mcp23017_set_pull_mode(gpio_exp_t* self) {
+	i2c_write_word(self->phy.port, self->phy.addr, 0x0c, self->pullup);
+}
+
+static int mcp23017_read(gpio_exp_t* self) {
+	// read the pin value, not the stored one @interrupt
+	return i2c_read_word(self->phy.port, self->phy.addr, 0x12);
+}
+
+static void mcp23017_write(gpio_exp_t* self) {
+	i2c_write_word(self->phy.port, self->phy.addr, 0x12, self->shadow);
 }
 
 /****************************************************************************************
@@ -375,7 +433,7 @@ static void pca85xx_write(union gpio_exp_phy_u *phy, uint32_t r_mask, uint32_t s
  */
 static void IRAM_ATTR intr_isr_handler(void* arg)
 {
-	struct gpio_exp_s *expander = (struct gpio_exp_s*) arg;
+	gpio_exp_t *expander = (gpio_exp_t*) arg;
 	BaseType_t woken = pdFALSE;
 	
 	for (int i = 0; i < sizeof(expander->isr)/sizeof(*expander->isr); i++) {
