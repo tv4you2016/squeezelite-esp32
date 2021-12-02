@@ -235,7 +235,7 @@ static bool Init( struct GDS_Device* Device ) {
 	Private->iRAM = heap_caps_malloc( (Private->PageSize + 1) * Device->Width * Depth, MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA );
 #endif
 
-	ESP_LOGI(TAG, "ST77xx with bit depth %u, page %u, iRAM %p", Device->Depth, Private->PageSize, Private->iRAM);
+	ESP_LOGI(TAG, "ST77xx with bit depth %u, offsets %hu:%hu, page %u, iRAM %p", Device->Depth, Private->Offset.Height, Private->Offset.Width, Private->PageSize, Private->iRAM);
 	
 	// Sleepout + Booster
 	Device->WriteCommand( Device, 0x11 );
