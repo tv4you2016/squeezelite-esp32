@@ -70,9 +70,9 @@ void services_init(void) {
 	}
 #endif
 
-	// create GPIO expander
-	const gpio_exp_config_t * gpio_exp_config = config_gpio_exp_get();
-	if (gpio_exp_config) gpio_exp_create(gpio_exp_config);
+	// create GPIO expanders
+	const gpio_exp_config_t* gpio_exp_config;
+	for (int count = 0; (gpio_exp_config = config_gpio_exp_get(count)); count++) gpio_exp_create(gpio_exp_config);
 
 	// set potential power GPIO (a GPIO-powered expander might be an issue)
 	parse_set_GPIO(set_power_gpio);
