@@ -260,7 +260,7 @@ The parameter "gpio_exp_config" supports the following syntax:
 ```
 model=<model>,addr=<addr>,[,port=system|dac][,base=<n>|100][,count=<n>|16][,intr=<gpio>]
 ```	
-- model: pca9535 (only tested today), pca85xx (untested) and mcp23017 (soon)
+- model: pca9535 (only tested today), pca85xx (untested) and mcp23017 (untested)
 - addr: inthe i2c address decimal 	
 - port: use either "system" port (shared with display for example) or "dac" port (system is default)
 - base: GPIO numbering offset to use everywhere else (default 40)
