@@ -55,7 +55,7 @@ static int led_max = 2;
  * 
  */
 static void set_level(struct led_s *led, bool on) {
-	if (led->pwm < 0 || led->gpio >= GPIO_NUM_MAX) gpio_set_level_u(led->gpio, on ? led->onstate : !led->onstate);
+	if (led->pwm < 0 || led->gpio >= GPIO_NUM_MAX) gpio_set_level_x(led->gpio, on ? led->onstate : !led->onstate);
 	else {
 		ledc_set_duty(LEDC_HIGH_SPEED_MODE, led->channel, on ? led->pwm : (led->onstate ? 0 : pwm_system.max));
 		ledc_update_duty(LEDC_HIGH_SPEED_MODE, led->channel);
@@ -182,8 +182,8 @@ bool led_config(int idx, gpio_num_t gpio, int onstate, int pwm) {
 	leds[idx].pwm = -1;
 
 	if (pwm < 0 || gpio >= GPIO_NUM_MAX) {	
-		if (gpio < GPIO_NUM_MAX) gpio_pad_select_gpio(gpio);
-		gpio_set_direction_u(gpio, GPIO_MODE_OUTPUT);
+		gpio_pad_select_gpio_x(gpio);
+		gpio_set_direction_x(gpio, GPIO_MODE_OUTPUT);
 	} else {	
 		leds[idx].channel = pwm_system.base_channel++;
 		leds[idx].pwm = pwm_system.max * powf(pwm / 100.0, 3);

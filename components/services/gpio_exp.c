@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/timers.h"
 #include "freertos/queue.h"
 #include "esp_task.h"
 #include "esp_log.h"
@@ -17,18 +18,27 @@
 #include "driver/i2c.h"
 #include "gpio_exp.h"
 
+#define GPIO_EXP_INTR	0x100
+#define	GPIO_EXP_WRITE	0x200
+
+/* 
+ shadow register is both output and input, so we assume that reading to the
+ ports also reads the value set on output
+*/
+ 
 typedef struct gpio_exp_s {
 	uint32_t first, last;
 	union gpio_exp_phy_u phy;
-	uint32_t shadow;
+	uint32_t shadow, pending;
 	TickType_t age;
 	SemaphoreHandle_t mutex;
 	uint32_t r_mask, w_mask;
 	uint32_t pullup, pulldown;
-	struct {
-		gpio_exp_isr handler;
+	struct gpio_exp_isr_s {
+		gpio_isr_t handler;
 		void *arg;
-	} isr[4];
+		TimerHandle_t timer;
+	} isr[32];
 	struct gpio_exp_model_s const *model;
 } gpio_exp_t;
 
@@ -37,7 +47,7 @@ typedef struct {
 	int gpio;
 	int level;
 	gpio_exp_t *expander;
-} async_request_t;
+} queue_request_t;
 
 static const char TAG[] = "gpio expander";
 
@@ -58,11 +68,11 @@ static void   mcp23017_set_direction(gpio_exp_t* self);
 static int    mcp23017_read(gpio_exp_t* self);
 static void   mcp23017_write(gpio_exp_t* self);
 
-static void   async_handler(void *arg);
+static void   service_handler(void *arg);
+static void   debounce_handler( TimerHandle_t xTimer );
 
 static esp_err_t i2c_write_byte(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg, uint8_t val);
-static uint8_t   i2c_read_byte(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg);
-static uint16_t  i2c_read_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg);
+static uint16_t  i2c_read(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg, bool word);
 static esp_err_t i2c_write_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg, uint16_t data);
 
 static const struct gpio_exp_model_s {
@@ -94,8 +104,9 @@ static const struct gpio_exp_model_s {
 };
 
 static EXT_RAM_ATTR uint8_t n_expanders;
-static EXT_RAM_ATTR QueueHandle_t async_queue;
+static EXT_RAM_ATTR QueueHandle_t message_queue;
 static EXT_RAM_ATTR gpio_exp_t expanders[4];
+static EXT_RAM_ATTR TaskHandle_t service_task;
 
 /******************************************************************************
  * Retrieve base from an expander reference
@@ -138,17 +149,18 @@ gpio_exp_t* gpio_exp_create(const gpio_exp_config_t *config) {
 	expander->first = config->base;
 	expander->last = config->base + config->count - 1;
 	expander->mutex = xSemaphoreCreateMutex();
+
 	memcpy(&expander->phy, &config->phy, sizeof(union gpio_exp_phy_u));
 	if (expander->model->init) expander->model->init(expander);
 
 	// create a task to handle asynchronous requests (only write at this time)
-	if (!async_queue) {
-		// we allocate TCB but stack is staic to avoid SPIRAM fragmentation
+	if (!message_queue) {
+		// we allocate TCB but stack is static to avoid SPIRAM fragmentation
 		StaticTask_t* xTaskBuffer = (StaticTask_t*) heap_caps_malloc(sizeof(StaticTask_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-		static EXT_RAM_ATTR StackType_t xStack[2*1024] __attribute__ ((aligned (4)));
+		static EXT_RAM_ATTR StackType_t xStack[4*1024] __attribute__ ((aligned (4)));
 
-		async_queue = xQueueCreate(4, sizeof(async_request_t));
-		xTaskCreateStatic(async_handler, "gpio_expander", sizeof(xStack), NULL, ESP_TASK_PRIO_MIN + 1, xStack, xTaskBuffer);
+		message_queue = xQueueCreate(4, sizeof(queue_request_t));
+		service_task = xTaskCreateStatic(service_handler, "gpio_expander", sizeof(xStack), NULL, ESP_TASK_PRIO_MIN + 1, xStack, xTaskBuffer);
 	}
 
 	// set interrupt if possible
@@ -180,36 +192,45 @@ gpio_exp_t* gpio_exp_create(const gpio_exp_config_t *config) {
 }
 
 /******************************************************************************
- * Add ISR handler
+ * Add ISR handler for a GPIO
  */
-bool gpio_exp_add_isr(gpio_exp_isr isr, void *arg, gpio_exp_t *expander) {
-	xSemaphoreTake(expander->mutex, pdMS_TO_TICKS(portMAX_DELAY));
+esp_err_t gpio_exp_isr_handler_add(int gpio, gpio_isr_t isr_handler, uint32_t debounce, void *arg, struct gpio_exp_s *expander) {
+	if (gpio < GPIO_NUM_MAX && !expander) return gpio_isr_handler_add(gpio, isr_handler, arg);
+	if ((expander = find_expander(expander, &gpio)) == NULL) return ESP_ERR_INVALID_ARG;
 
-	for (int i = 0; i < sizeof(expander->isr)/sizeof(*expander->isr); i++) {
-		if (!expander->isr[i].handler) {
-			expander->isr[i].handler = isr;
-			expander->isr[i].arg = arg;
-			ESP_LOGI(TAG, "Added new ISR for expander base %d", expander->first);
-			xSemaphoreGive(expander->mutex);
-			return true;
-		}
-	}
+	expander->isr[gpio].handler = isr_handler;
+	expander->isr[gpio].arg = arg;
+	if (debounce) expander->isr[gpio].timer = xTimerCreate("gpioExpDebounce", pdMS_TO_TICKS(debounce), 
+	                                                       pdFALSE, expander->isr + gpio, debounce_handler );
 
-	xSemaphoreGive(expander->mutex);
-	ESP_LOGE(TAG, "No room left to add new ISR");
-	return false;
+	return ESP_OK;
+}
+
+/******************************************************************************
+ * Remove ISR handler for a GPIO
+ */
+esp_err_t gpio_exp_isr_handler_remove(int gpio, struct gpio_exp_s *expander) {
+	if (gpio < GPIO_NUM_MAX && !expander) return gpio_isr_handler_remove(gpio);
+	if ((expander = find_expander(expander, &gpio)) == NULL) return ESP_ERR_INVALID_ARG;
+
+	if (expander->isr[gpio].timer) xTimerDelete(expander->isr[gpio].timer, portMAX_DELAY);
+	memset(expander->isr + gpio, 0, sizeof(struct gpio_exp_isr_s));
+
+	return ESP_OK;
 }
 
 /******************************************************************************
  * Set GPIO direction
  */
 esp_err_t gpio_exp_set_direction(int gpio, gpio_mode_t mode, gpio_exp_t *expander) {
+	if (gpio < GPIO_NUM_MAX && !expander) return gpio_set_direction(gpio, mode);
 	if ((expander = find_expander(expander, &gpio)) == NULL) return ESP_ERR_INVALID_ARG;
 
 	xSemaphoreTake(expander->mutex, pdMS_TO_TICKS(portMAX_DELAY));
 
 	if (mode == GPIO_MODE_INPUT) {
 		expander->r_mask |= 1 << gpio;
+		expander->shadow = expander->model->read(expander);
 		expander->age = ~xTaskGetTickCount();
 	} else {
 		expander->w_mask |= 1 << gpio;
@@ -225,27 +246,37 @@ esp_err_t gpio_exp_set_direction(int gpio, gpio_mode_t mode, gpio_exp_t *expande
 	if (expander->model->set_direction) expander->model->set_direction(expander);
 
 	xSemaphoreGive(expander->mutex);
+
 	return ESP_OK;
 }	
 
 /******************************************************************************
  * Get GPIO level with cache
  */
-int gpio_exp_get_level(int gpio, uint32_t age, gpio_exp_t *expander) {
+int gpio_exp_get_level(int gpio, int age, gpio_exp_t *expander) {
+	if (gpio < GPIO_NUM_MAX && !expander) return gpio_get_level(gpio);
 	if ((expander = find_expander(expander, &gpio)) == NULL) return -1;
 	uint32_t now = xTaskGetTickCount();
-	
-	// this is a little risk here but that avoids calling scheduler if we are cached
-	if (now - expander->age >= pdMS_TO_TICKS(age)) {
-		if (xSemaphoreTake(expander->mutex, pdMS_TO_TICKS(50)) == pdFALSE) return -1;
 
-		expander->shadow = expander->model->read(expander);
-		expander->age = now;
-
-		xSemaphoreGive(expander->mutex);
+	// return last thing we had if we can't get the mutex
+	if (xSemaphoreTake(expander->mutex, pdMS_TO_TICKS(50)) == pdFALSE) {
+		ESP_LOGW(TAG, "Can't get mutex for GPIO %d", expander->first + gpio);
+		return (expander->shadow >> gpio) & 0x01;
 	}
-	
 
+	// re-read the expander if data is too old
+	if (age >= 0 && now - expander->age >= pdMS_TO_TICKS(age)) {
+		uint32_t value = expander->model->read(expander);
+		expander->pending |= (expander->shadow ^ value) & expander->r_mask;
+		expander->shadow = value;
+		expander->age = now;
+	}
+
+	// clear pending bit
+	expander->pending &= ~(1 << gpio);
+
+	xSemaphoreGive(expander->mutex);
+	
 	ESP_LOGD(TAG, "Get level for GPIO %u => read %x", expander->first + gpio, expander->shadow);
 	return (expander->shadow >> gpio) & 0x01;
 }
@@ -254,10 +285,11 @@ int gpio_exp_get_level(int gpio, uint32_t age, gpio_exp_t *expander) {
  * Set GPIO level with cache
  */
 esp_err_t gpio_exp_set_level(int gpio, int level, bool direct, gpio_exp_t *expander) {
+	if (gpio < GPIO_NUM_MAX && !expander) return gpio_set_level(gpio, level);
 	if ((expander = find_expander(expander, &gpio)) == NULL) return ESP_ERR_INVALID_ARG;
 	uint32_t mask = 1 << gpio;
 
-	// limited risk with lack of semaphore here
+	// very limited risk with lack of semaphore here
 	if ((expander->w_mask & mask) == 0) {
 		ESP_LOGW(TAG, "GPIO %d is not set for output", expander->first + gpio);
 		return ESP_ERR_INVALID_ARG;
@@ -278,8 +310,11 @@ esp_err_t gpio_exp_set_level(int gpio, int level, bool direct, gpio_exp_t *expan
 		xSemaphoreGive(expander->mutex);
 		ESP_LOGD(TAG, "Set level %x for GPIO %u => wrote %x", level, expander->first + gpio, expander->shadow);
 	} else {
-		async_request_t request = { .gpio = gpio, .level = level, .type = ASYNC_WRITE, .expander = expander };
-		if (xQueueSend(async_queue, &request, 0) == pdFALSE) return ESP_ERR_INVALID_RESPONSE;
+		queue_request_t request = { .gpio = gpio, .level = level, .type = ASYNC_WRITE, .expander = expander };
+		if (xQueueSend(message_queue, &request, 0) == pdFALSE) return ESP_ERR_INVALID_RESPONSE;
+
+		// notify service task that will write it when it can
+		xTaskNotify(service_task, GPIO_EXP_WRITE, eSetValueWithoutOverwrite);
 	} 
 
 	return ESP_OK;
@@ -289,6 +324,7 @@ esp_err_t gpio_exp_set_level(int gpio, int level, bool direct, gpio_exp_t *expan
  * Set GPIO pullmode
  */
 esp_err_t gpio_exp_set_pull_mode(int gpio, gpio_pull_mode_t mode, gpio_exp_t *expander) {
+	if (gpio < GPIO_NUM_MAX && !expander) return gpio_set_pull_mode(gpio, mode);
 	if ((expander = find_expander(expander, &gpio)) != NULL && expander->model->set_pull_mode) {
 
 		expander->pullup &= ~(1 << gpio);
@@ -304,53 +340,43 @@ esp_err_t gpio_exp_set_pull_mode(int gpio, gpio_pull_mode_t mode, gpio_exp_t *ex
 }
 
 /******************************************************************************
- * Enumerate modified GPIO
- */
-void gpio_exp_enumerate(gpio_exp_enumerator enumerator, gpio_exp_t *expander) {
-	uint32_t value = expander->model->read(expander) ^ expander->shadow;
-	uint8_t clz;
-	
-	// memorize newly read value and just update if requested
-	xSemaphoreTake(expander->mutex, pdMS_TO_TICKS(50));
-	expander->shadow ^= value;
-	xSemaphoreGive(expander->mutex);
-	if (!enumerator) return;
-	
-	// now we have a bitmap of all modified GPIO sinnce last call
-	for (int gpio = 0; value; value <<= (clz + 1)) {
-		clz = __builtin_clz(value);
-		gpio += clz;
-		enumerator(expander->first + 31 - gpio, (expander->shadow >> (31 - gpio)) & 0x01, expander);
-	}	
-}
-
-/******************************************************************************
  * Wrapper function
  */
-esp_err_t gpio_set_pull_mode_u(int gpio, gpio_pull_mode_t mode) {
+esp_err_t gpio_set_pull_mode_x(int gpio, gpio_pull_mode_t mode) {
 	if (gpio < GPIO_NUM_MAX) return gpio_set_pull_mode(gpio, mode);
 	return gpio_exp_set_pull_mode(gpio, mode, NULL);
 }
 
-esp_err_t gpio_set_direction_u(int gpio, gpio_mode_t mode) {
+esp_err_t gpio_set_direction_x(int gpio, gpio_mode_t mode) {
 	if (gpio < GPIO_NUM_MAX) return gpio_set_direction(gpio, mode);
 	return gpio_exp_set_direction(gpio, mode, NULL);
 }
 
-int gpio_get_level_u(int gpio) {
+int gpio_get_level_x(int gpio) {
 	if (gpio < GPIO_NUM_MAX) return gpio_get_level(gpio);
-	return gpio_exp_get_level(gpio, 50, NULL);
+	return gpio_exp_get_level(gpio, 10, NULL);
 }
 
-esp_err_t gpio_set_level_u(int gpio, int level) {
+esp_err_t gpio_set_level_x(int gpio, int level) {
 	if (gpio < GPIO_NUM_MAX) return gpio_set_level(gpio, level);
 	return gpio_exp_set_level(gpio, level, false, NULL);
+}
+
+esp_err_t gpio_isr_handler_add_x(int gpio, gpio_isr_t isr_handler, void* args) {
+	if (gpio < GPIO_NUM_MAX) return gpio_isr_handler_add(gpio, isr_handler, args);
+	return gpio_exp_isr_handler_add(gpio, isr_handler, 0, args, NULL);
+}
+
+esp_err_t gpio_isr_handler_remove_x(int gpio) {
+	if (gpio < GPIO_NUM_MAX) return gpio_isr_handler_remove(gpio);
+	return gpio_exp_isr_handler_remove(gpio, NULL);
 }
 
 /****************************************************************************************
  * Find the expander related to base
  */
 static gpio_exp_t* find_expander(gpio_exp_t *expander, int *gpio) {
+	// a mutex would be better, but risk is so small...
 	for (int i = 0; !expander && i < n_expanders; i++) {
 		if (*gpio >= expanders[i].first && *gpio <= expanders[i].last) expander = expanders + i;
 	}
@@ -369,7 +395,7 @@ static void pca9535_set_direction(gpio_exp_t* self) {
 }
 
 static int pca9535_read(gpio_exp_t* self) {
-	return i2c_read_word(self->phy.port, self->phy.addr, 0x00);
+	return i2c_read(self->phy.port, self->phy.addr, 0x00, true);
 }
 
 static void pca9535_write(gpio_exp_t* self) {
@@ -385,7 +411,7 @@ static void pca85xx_set_direction(gpio_exp_t* self) {
 }
 
 static int pca85xx_read(gpio_exp_t* self) {
-	return i2c_read_word(self->phy.port, self->phy.addr, 0xff);
+	return i2c_read(self->phy.port, self->phy.addr, 0xff, true);
 }
 
 static void pca85xx_write(gpio_exp_t* self) {
@@ -398,7 +424,7 @@ static void pca85xx_write(gpio_exp_t* self) {
  */
 static void mcp23017_init(gpio_exp_t* self) {
 	/*
-	0111 x10x = same bank, mirrot single int, no sequentµial, open drain, active low
+	0111 x10x = same bank, mirrot single int, no sequentÂµial, open drain, active low
 	not sure about this funny change of mapping of the control register itself, really?
 	*/
 	i2c_write_byte(self->phy.port, self->phy.addr, 0x05, 0x74);
@@ -421,7 +447,7 @@ static void mcp23017_set_pull_mode(gpio_exp_t* self) {
 
 static int mcp23017_read(gpio_exp_t* self) {
 	// read the pin value, not the stored one @interrupt
-	return i2c_read_word(self->phy.port, self->phy.addr, 0x12);
+	return i2c_read(self->phy.port, self->phy.addr, 0x12, true);
 }
 
 static void mcp23017_write(gpio_exp_t* self) {
@@ -431,42 +457,67 @@ static void mcp23017_write(gpio_exp_t* self) {
 /****************************************************************************************
  * INTR low-level handler
  */
-static void IRAM_ATTR intr_isr_handler(void* arg)
-{
-	gpio_exp_t *expander = (gpio_exp_t*) arg;
+static void IRAM_ATTR intr_isr_handler(void* arg) {
 	BaseType_t woken = pdFALSE;
 	
-	for (int i = 0; i < sizeof(expander->isr)/sizeof(*expander->isr); i++) {
-		if (expander->isr[i].handler) woken |= expander->isr[i].handler(expander->isr[i].arg);
-	}
-
+	xTaskNotifyFromISR(service_task, GPIO_EXP_INTR, eSetValueWithOverwrite, &woken);
 	if (woken) portYIELD_FROM_ISR();
 
-	ESP_EARLY_LOGD(TAG, "INTR for expander %u", expander->first);
+	ESP_EARLY_LOGD(TAG, "INTR for expander base", gpio_exp_get_base(arg));
 }
 
 /****************************************************************************************
- * Async task
+ * INTR debounce handler
  */
-void async_handler(void *arg) {
+static void debounce_handler( TimerHandle_t xTimer ) {
+	struct gpio_exp_isr_s *isr = (struct gpio_exp_isr_s*) pvTimerGetTimerID (xTimer);
+	isr->handler(isr->arg);
+}
+
+/****************************************************************************************
+ * Service task
+ */
+void service_handler(void *arg) {
 	while (1) {
-		esp_err_t err;
-		async_request_t request;
+		queue_request_t request;
+		uint32_t notif = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-		if (!xQueueReceive(async_queue, &request, portMAX_DELAY)) continue;
+		// we have been notified of an interrupt
+		if (notif == GPIO_EXP_INTR) {
+			/* If we want a smarter bitmap of expanders with a pending interrupt
+			   we'll have to disable interrupts while clearing that bitmap. For 
+			   now, a loop will do */
+			for (int i = 0; i < n_expanders; i++) {
+				gpio_exp_t *expander = expanders + i;
+				
+				xSemaphoreTake(expander->mutex, pdMS_TO_TICKS(50));
 
-		switch (request.type) {
-		case ASYNC_WRITE:
-			err = gpio_exp_set_level(request.gpio, request.level, true, request.expander);
+				// read GPIOs and clear all pending status
+				uint32_t value = expander->model->read(expander);
+				uint32_t pending = expander->pending | ((expander->shadow ^ value) & expander->r_mask);
+				expander->shadow = value;
+				expander->pending = 0;
+				expander->age = xTaskGetTickCount();
+
+				xSemaphoreGive(expander->mutex);
+				ESP_LOGD(TAG, "Handling GPIO %d reads 0x%04x and has 0x%04x pending", expander->first, expander->shadow, pending);
+				
+				for (int gpio = 31, clz; pending; pending <<= (clz + 1)) {
+					clz = __builtin_clz(pending);
+					gpio -= clz;
+					if (expander->isr[gpio].timer) xTimerReset(expander->isr[gpio].timer, 1);	// todo 0
+					else if (expander->isr[gpio].handler) expander->isr[gpio].handler(expander->isr[gpio].arg);
+				}
+			}
+		}
+
+		// check if we have some other pending requests
+		if (xQueueReceive(message_queue, &request, 0) == pdTRUE) {
+			esp_err_t err = gpio_exp_set_level(request.gpio, request.level, true, request.expander);
 			if (err != ESP_OK) ESP_LOGW(TAG, "Can't execute async GPIO %d write request (%d)", request.gpio, err);  
-			break;
-		default:
-			break;
 		}
 	}
 }
-
-
 
 /****************************************************************************************
  * 
@@ -491,41 +542,14 @@ static esp_err_t i2c_write_byte(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg,
 }
 
 /****************************************************************************************
- * I2C read one byte
+ * I2C read 8 or 16 bits word
  */
-static uint8_t i2c_read_byte(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg) {
-	uint8_t data = 0xff;
+static uint16_t i2c_read(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg, bool word) {
+	uint8_t data[2];
 	
 	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-    
-	i2c_master_write_byte(cmd, (i2c_addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_NACK);
-	i2c_master_write_byte(cmd, reg, I2C_MASTER_NACK);
 
-	i2c_master_start(cmd);			
-	i2c_master_write_byte(cmd, (i2c_addr << 1) | I2C_MASTER_READ, I2C_MASTER_NACK);
-	i2c_master_read_byte(cmd, &data, I2C_MASTER_NACK);
-	
-    i2c_master_stop(cmd);
-	esp_err_t ret = i2c_master_cmd_begin(i2c_port, cmd, 100 / portTICK_RATE_MS);
-	i2c_cmd_link_delete(cmd);
-	
-	if (ret != ESP_OK) {
-		ESP_LOGW(TAG, "I2C read failed");
-	}
-	
-	return data;
-}
-
-/****************************************************************************************
- * I2C read 16 bits word
- */
-static uint16_t i2c_read_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg) {
-	uint16_t data = 0xffff;
-	
-	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
-	
     i2c_master_write_byte(cmd, (i2c_addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_NACK);
 
 	// when using a register, write it's value then the device address again
@@ -535,7 +559,12 @@ static uint16_t i2c_read_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg) {
 		i2c_master_write_byte(cmd, (i2c_addr << 1) | I2C_MASTER_READ, I2C_MASTER_NACK);
 	}
 
-    i2c_master_read(cmd, (uint8_t*) &data, 2, I2C_MASTER_NACK);
+	if (word) {
+		i2c_master_read_byte(cmd, data, I2C_MASTER_ACK);
+		i2c_master_read_byte(cmd, data + 1, I2C_MASTER_NACK);
+	} else {
+		i2c_master_read_byte(cmd, data, I2C_MASTER_NACK);
+	}
 	
     i2c_master_stop(cmd);
     esp_err_t ret = i2c_master_cmd_begin(i2c_port, cmd, 100 / portTICK_RATE_MS);
@@ -545,7 +574,7 @@ static uint16_t i2c_read_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg) {
 		ESP_LOGW(TAG, "I2C read failed");
 	}
 
-	return data;
+	return *(uint16_t*) data;
 }
 
 /****************************************************************************************
@@ -563,7 +592,7 @@ static esp_err_t i2c_write_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg,
 	esp_err_t ret = i2c_master_cmd_begin(i2c_port, cmd, 100 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
 	
-	if (ret != ESP_OK) {
+	if (ret != ESP_OK) {		
 		ESP_LOGW(TAG, "I2C write failed");
 	}
 	

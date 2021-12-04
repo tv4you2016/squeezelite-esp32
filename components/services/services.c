@@ -43,13 +43,13 @@ void set_power_gpio(int gpio, char *value) {
 	bool parsed = true;
 	
 	if (!strcasecmp(value, "vcc") ) {
-		if (gpio < GPIO_NUM_MAX) gpio_pad_select_gpio(gpio);
-		gpio_set_direction_u(gpio, GPIO_MODE_OUTPUT);
-		gpio_set_level_u(gpio, 1);
+		gpio_pad_select_gpio_x(gpio);
+		gpio_set_direction_x(gpio, GPIO_MODE_OUTPUT);
+		gpio_set_level_x(gpio, 1);
 	} else if (!strcasecmp(value, "gnd")) {
-		if (gpio < GPIO_NUM_MAX) gpio_pad_select_gpio(gpio);
-		gpio_set_direction_u(gpio, GPIO_MODE_OUTPUT);
-		gpio_set_level_u(gpio, 0);
+		gpio_pad_select_gpio_x(gpio);
+		gpio_set_direction_x(gpio, GPIO_MODE_OUTPUT);
+		gpio_set_level_x(gpio, 0);
 	} else parsed = false;
 	
 	if (parsed) ESP_LOGI(TAG, "set GPIO %u to %s", gpio, value);
