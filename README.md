@@ -251,7 +251,7 @@ Syntax is:
 You can define the defaults for jack, spkfault leds at compile time but nvs parameter takes precedence except for well-known configurations where these are forced at runtime.
 **Note that gpio 36 and 39 are input only and cannot use interrupt. When set to jack or speaker fault, a 100ms polling checks their value but that's expensive**
 	
-### GPIO expander (not fully validated yet)
+### GPIO expander
 It is possible to add GPIO expanders using I2C bus. They should mainly be used for buttons but they can support generic-purpose outputs as well. These additional GPIOs can be numbered starting from an arbitrary value (40 and above as esp32 has GPIO 0..39). Then these new "virtual" GPIOs from (e.g) 100 to 115 can be used in button configuration, set_GPIO or other config settings.
 
 Each expander can support up to 32 GPIO. To use an expander for buttons, an interrupt must be provided, polling mode is not acceptable. An expander w/o interruption can still be configured, but only output will be usable.
@@ -260,7 +260,7 @@ The parameter "gpio_exp_config" is a semicolon (;) separated list with following
 ```
 model=<model>,addr=<addr>,[,port=system|dac][,base=<n>|100][,count=<n>|16][,intr=<gpio>]
 ```	
-- model: pca9535 (only tested today), pca85xx (untested) and mcp23017 (untested)
+- model: pca9535, pca85xx (untested) and mcp23017
 - addr: inthe i2c address decimal 	
 - port: use either "system" port (shared with display for example) or "dac" port (system is default)
 - base: GPIO numbering offset to use everywhere else (default 40)
