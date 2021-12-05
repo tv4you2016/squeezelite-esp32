@@ -463,7 +463,7 @@ static void IRAM_ATTR intr_isr_handler(void* arg) {
 	xTaskNotifyFromISR(service_task, GPIO_EXP_INTR, eSetValueWithOverwrite, &woken);
 	if (woken) portYIELD_FROM_ISR();
 
-	ESP_EARLY_LOGD(TAG, "INTR for expander base", gpio_exp_get_base(arg));
+	ESP_EARLY_LOGD(TAG, "INTR for expander base %d", gpio_exp_get_base(arg));
 }
 
 /****************************************************************************************
