@@ -70,13 +70,6 @@ void services_init(void) {
 	}
 #endif
 
-	// create GPIO expanders
-	const gpio_exp_config_t* gpio_exp_config;
-	for (int count = 0; (gpio_exp_config = config_gpio_exp_get(count)); count++) gpio_exp_create(gpio_exp_config);
-
-	// set potential power GPIO (a GPIO-powered expander might be an issue)
-	parse_set_GPIO(set_power_gpio);
-
 	// shared I2C bus 
 	const i2c_config_t * i2c_config = config_i2c_get(&i2c_system_port);
 	ESP_LOGI(TAG,"Configuring I2C sda:%d scl:%d port:%u speed:%u", i2c_config->sda_io_num, i2c_config->scl_io_num, i2c_system_port, i2c_config->master.clk_speed);
@@ -88,6 +81,13 @@ void services_init(void) {
 		i2c_system_port = -1;
 		ESP_LOGW(TAG, "no I2C configured");
 	}	
+
+	// create GPIO expanders
+	const gpio_exp_config_t* gpio_exp_config;
+	for (int count = 0; (gpio_exp_config = config_gpio_exp_get(count)); count++) gpio_exp_create(gpio_exp_config);
+
+	// set potential power GPIO (a GPIO-powered expander might be an issue)
+	parse_set_GPIO(set_power_gpio);
 
 	const spi_bus_config_t * spi_config = config_spi_get((spi_host_device_t*) &spi_system_host);
 	ESP_LOGI(TAG,"Configuring SPI data:%d clk:%d host:%u dc:%d", spi_config->mosi_io_num, spi_config->sclk_io_num, spi_system_host, spi_system_dc_gpio);

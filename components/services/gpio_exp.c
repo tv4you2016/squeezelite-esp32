@@ -187,7 +187,7 @@ gpio_exp_t* gpio_exp_create(const gpio_exp_config_t *config) {
 		gpio_intr_enable(config->intr);						
 	}
 	
-	ESP_LOGI(TAG, "Create GPIO expander at base %u with INT %u at @%x on port %d", config->base, config->intr, config->phy.addr, config->phy.port);
+	ESP_LOGI(TAG, "Create GPIO expander %s at base %u with INT %u at @%x on port %d", config->model, config->base, config->intr, config->phy.addr, config->phy.port);
 	return expander;
 }
 
@@ -241,7 +241,7 @@ esp_err_t gpio_exp_set_direction(int gpio, gpio_mode_t mode, gpio_exp_t *expande
 		ESP_LOGE(TAG, "GPIO %d on expander base %u can't be r/w", gpio, expander->first);
 		return ESP_ERR_INVALID_ARG;
 	}
-	
+
 	// most expanders want unconfigured GPIO to be set to output
 	if (expander->model->set_direction) expander->model->set_direction(expander);
 
@@ -382,7 +382,7 @@ static gpio_exp_t* find_expander(gpio_exp_t *expander, int *gpio) {
 	}
 	
 	// normalize GPIO number
-	if (expander && *gpio >= expanders->first) *gpio -= expanders->first;
+	if (expander && *gpio >= expander->first) *gpio -= expander->first;
 	
 	return expander;
 }
