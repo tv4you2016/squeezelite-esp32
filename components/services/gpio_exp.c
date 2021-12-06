@@ -16,6 +16,7 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "driver/i2c.h"
+#include "driver/spi_master.h"
 #include "gpio_exp.h"
 
 #define GPIO_EXP_INTR	0x100
@@ -28,7 +29,10 @@
  
 typedef struct gpio_exp_s {
 	uint32_t first, last;
-	union gpio_exp_phy_u phy;
+	struct  {
+		struct gpio_exp_phy_s phy;
+		spi_device_handle_t spi_handle;
+	};
 	uint32_t shadow, pending;
 	TickType_t age;
 	SemaphoreHandle_t mutex;
@@ -54,35 +58,44 @@ static const char TAG[] = "gpio expander";
 static void   IRAM_ATTR intr_isr_handler(void* arg);
 static gpio_exp_t* find_expander(gpio_exp_t *expander, int *gpio);
 
-static void   pca9535_set_direction(gpio_exp_t* self);
-static int    pca9535_read(gpio_exp_t* self);
-static void   pca9535_write(gpio_exp_t* self);
+static void pca9535_set_direction(gpio_exp_t* self);
+static int  pca9535_read(gpio_exp_t* self);
+static void pca9535_write(gpio_exp_t* self);
 
-static void   pca85xx_set_direction(gpio_exp_t* self);
-static int    pca85xx_read(gpio_exp_t* self);
-static void   pca85xx_write(gpio_exp_t* self);
+static void pca85xx_set_direction(gpio_exp_t* self);
+static int  pca85xx_read(gpio_exp_t* self);
+static void pca85xx_write(gpio_exp_t* self);
 
-static void   mcp23017_init(gpio_exp_t* self);
-static void   mcp23017_set_pull_mode(gpio_exp_t* self);
-static void   mcp23017_set_direction(gpio_exp_t* self);
-static int    mcp23017_read(gpio_exp_t* self);
-static void   mcp23017_write(gpio_exp_t* self);
+static esp_err_t mcp23017_init(gpio_exp_t* self);
+static void      mcp23017_set_pull_mode(gpio_exp_t* self);
+static void      mcp23017_set_direction(gpio_exp_t* self);
+static int       mcp23017_read(gpio_exp_t* self);
+static void      mcp23017_write(gpio_exp_t* self);
+
+static esp_err_t mcp23s17_init(gpio_exp_t* self);
+static void      mcp23s17_set_pull_mode(gpio_exp_t* self);
+static void      mcp23s17_set_direction(gpio_exp_t* self);
+static int       mcp23s17_read(gpio_exp_t* self);
+static void      mcp23s17_write(gpio_exp_t* self);
 
 static void   service_handler(void *arg);
 static void   debounce_handler( TimerHandle_t xTimer );
 
-static esp_err_t i2c_write_byte(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg, uint8_t val);
-static uint16_t  i2c_read(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg, bool word);
-static esp_err_t i2c_write_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg, uint16_t data);
+static esp_err_t i2c_write(uint8_t port, uint8_t addr, uint8_t reg, uint32_t data, int len);
+static uint32_t  i2c_read(uint8_t port, uint8_t addr, uint8_t reg, int len);
+
+static spi_device_handle_t spi_config(struct gpio_exp_phy_s *phy);
+static esp_err_t           spi_write(spi_device_handle_t handle, uint8_t addr, uint8_t reg, uint32_t data, int len);
+static uint32_t            spi_read(spi_device_handle_t handle, uint8_t addr, uint8_t reg, int len);
 
 static const struct gpio_exp_model_s {
 	char *model;
 	gpio_int_type_t trigger;
-	void (*init)(gpio_exp_t* self);
-	int  (*read)(gpio_exp_t* self);
-	void (*write)(gpio_exp_t* self);
-	void (*set_direction)(gpio_exp_t* self);
-	void (*set_pull_mode)(gpio_exp_t* self);
+	esp_err_t (*init)(gpio_exp_t* self);
+	int       (*read)(gpio_exp_t* self);
+	void      (*write)(gpio_exp_t* self);
+	void      (*set_direction)(gpio_exp_t* self);
+	void      (*set_pull_mode)(gpio_exp_t* self);
 } registered[] = {
 	{ .model = "pca9535",
 	  .trigger = GPIO_INTR_NEGEDGE, 
@@ -101,6 +114,13 @@ static const struct gpio_exp_model_s {
 	  .set_pull_mode = mcp23017_set_pull_mode,
 	  .read = mcp23017_read,
 	  .write = mcp23017_write, },
+	{ .model = "mcp23s17",
+	  .trigger = GPIO_INTR_NEGEDGE, 
+	  .init = mcp23s17_init,
+	  .set_direction = mcp23s17_set_direction,
+	  .set_pull_mode = mcp23s17_set_pull_mode,
+	  .read = mcp23s17_read,
+	  .write = mcp23s17_write, },
 };
 
 static EXT_RAM_ATTR uint8_t n_expanders;
@@ -150,7 +170,7 @@ gpio_exp_t* gpio_exp_create(const gpio_exp_config_t *config) {
 	expander->last = config->base + config->count - 1;
 	expander->mutex = xSemaphoreCreateMutex();
 
-	memcpy(&expander->phy, &config->phy, sizeof(union gpio_exp_phy_u));
+	memcpy(&expander->phy, &config->phy, sizeof(struct gpio_exp_phy_s));
 	if (expander->model->init) expander->model->init(expander);
 
 	// create a task to handle asynchronous requests (only write at this time)
@@ -372,87 +392,6 @@ esp_err_t gpio_isr_handler_remove_x(int gpio) {
 	return gpio_exp_isr_handler_remove(gpio, NULL);
 }
 
-/****************************************************************************************
- * Find the expander related to base
- */
-static gpio_exp_t* find_expander(gpio_exp_t *expander, int *gpio) {
-	// a mutex would be better, but risk is so small...
-	for (int i = 0; !expander && i < n_expanders; i++) {
-		if (*gpio >= expanders[i].first && *gpio <= expanders[i].last) expander = expanders + i;
-	}
-	
-	// normalize GPIO number
-	if (expander && *gpio >= expander->first) *gpio -= expander->first;
-	
-	return expander;
-}
-
-/****************************************************************************************
- * PCA9535 family : direction, read and write
- */
-static void pca9535_set_direction(gpio_exp_t* self) {
-	i2c_write_word(self->phy.port, self->phy.addr, 0x06, self->r_mask);
-}
-
-static int pca9535_read(gpio_exp_t* self) {
-	return i2c_read(self->phy.port, self->phy.addr, 0x00, true);
-}
-
-static void pca9535_write(gpio_exp_t* self) {
-	i2c_write_word(self->phy.port, self->phy.addr, 0x02, self->shadow);
-}
-
-/****************************************************************************************
- * PCA85xx family : read and write
- */
-static void pca85xx_set_direction(gpio_exp_t* self) {
-	// all inputs must be set to 1 (open drain) and output are left open as well
-	i2c_write_word(self->phy.port, self->phy.addr, 0xff, self->r_mask | self->w_mask);
-}
-
-static int pca85xx_read(gpio_exp_t* self) {
-	return i2c_read(self->phy.port, self->phy.addr, 0xff, true);
-}
-
-static void pca85xx_write(gpio_exp_t* self) {
-	// all input must be set to 1 (open drain)
-	i2c_write_word(self->phy.port, self->phy.addr, 0xff, self->shadow | self->r_mask);
-}
-
-/****************************************************************************************
- * MCP23017 family : init, direction, read and write
- */
-static void mcp23017_init(gpio_exp_t* self) {
-	/*
-	0111 x10x = same bank, mirrot single int, no sequentµial, open drain, active low
-	not sure about this funny change of mapping of the control register itself, really?
-	*/
-	i2c_write_byte(self->phy.port, self->phy.addr, 0x05, 0x74);
-	i2c_write_byte(self->phy.port, self->phy.addr, 0x0a, 0x74);
-
-	// no interrupt on comparison or on change
-	i2c_write_word(self->phy.port, self->phy.addr, 0x04, 0x00);
-	i2c_write_word(self->phy.port, self->phy.addr, 0x08, 0x00);
-}
-
-static void mcp23017_set_direction(gpio_exp_t* self) {
-	// default to input and set real input to generate interrupt
-	i2c_write_word(self->phy.port, self->phy.addr, 0x00, ~self->w_mask);
-	i2c_write_word(self->phy.port, self->phy.addr, 0x04, self->r_mask);
-}
-
-static void mcp23017_set_pull_mode(gpio_exp_t* self) {
-	i2c_write_word(self->phy.port, self->phy.addr, 0x0c, self->pullup);
-}
-
-static int mcp23017_read(gpio_exp_t* self) {
-	// read the pin value, not the stored one @interrupt
-	return i2c_read(self->phy.port, self->phy.addr, 0x12, true);
-}
-
-static void mcp23017_write(gpio_exp_t* self) {
-	i2c_write_word(self->phy.port, self->phy.addr, 0x12, self->shadow);
-}
 
 /****************************************************************************************
  * INTR low-level handler
@@ -520,76 +459,152 @@ void service_handler(void *arg) {
 }
 
 /****************************************************************************************
- * 
+ * Find the expander related to base
  */
-static esp_err_t i2c_write_byte(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg, uint8_t val) {
-    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
-    i2c_master_start(cmd);
-	
-	i2c_master_write_byte(cmd, (i2c_addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_NACK);
-	i2c_master_write_byte(cmd, reg, I2C_MASTER_NACK);
-	i2c_master_write_byte(cmd, val, I2C_MASTER_NACK);
-	
-	i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(i2c_port, cmd, 100 / portTICK_RATE_MS);
-    i2c_cmd_link_delete(cmd);
-	
-	if (ret != ESP_OK) {
-		ESP_LOGW(TAG, "I2C write failed");
+static gpio_exp_t* find_expander(gpio_exp_t *expander, int *gpio) {
+	// a mutex would be better, but risk is so small...
+	for (int i = 0; !expander && i < n_expanders; i++) {
+		if (*gpio >= expanders[i].first && *gpio <= expanders[i].last) expander = expanders + i;
 	}
 	
-    return ret;
+	// normalize GPIO number
+	if (expander && *gpio >= expander->first) *gpio -= expander->first;
+	
+	return expander;
 }
 
 /****************************************************************************************
- * I2C read 8 or 16 bits word
+                                        DRIVERS                                       
+****************************************************************************************/
+
+/****************************************************************************************
+ * PCA9535 family : direction, read and write
  */
-static uint16_t i2c_read(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg, bool word) {
-	uint8_t data[2];
-	
-	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+static void pca9535_set_direction(gpio_exp_t* self) {
+	i2c_write(self->phy.port, self->phy.addr, 0x06, self->r_mask, 2);
+}
 
-    i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (i2c_addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_NACK);
+static int pca9535_read(gpio_exp_t* self) {
+	return i2c_read(self->phy.port, self->phy.addr, 0x00, 2);
+}
 
-	// when using a register, write it's value then the device address again
-	if (reg != 0xff) {
-		i2c_master_write_byte(cmd, reg, I2C_MASTER_NACK);
-		i2c_master_start(cmd);
-		i2c_master_write_byte(cmd, (i2c_addr << 1) | I2C_MASTER_READ, I2C_MASTER_NACK);
-	}
-
-	if (word) {
-		i2c_master_read_byte(cmd, data, I2C_MASTER_ACK);
-		i2c_master_read_byte(cmd, data + 1, I2C_MASTER_NACK);
-	} else {
-		i2c_master_read_byte(cmd, data, I2C_MASTER_NACK);
-	}
-	
-    i2c_master_stop(cmd);
-    esp_err_t ret = i2c_master_cmd_begin(i2c_port, cmd, 100 / portTICK_RATE_MS);
-    i2c_cmd_link_delete(cmd);
-	
-	if (ret != ESP_OK) {
-		ESP_LOGW(TAG, "I2C read failed");
-	}
-
-	return *(uint16_t*) data;
+static void pca9535_write(gpio_exp_t* self) {
+	i2c_write(self->phy.port, self->phy.addr, 0x02, self->shadow, 2);
 }
 
 /****************************************************************************************
- * I2C write 16 bits word
+ * PCA85xx family : read and write
  */
-static esp_err_t i2c_write_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg, uint16_t data) {
+static void pca85xx_set_direction(gpio_exp_t* self) {
+	// all inputs must be set to 1 (open drain) and output are left open as well
+	i2c_write(self->phy.port, self->phy.addr, 0xff, self->r_mask | self->w_mask, true);
+}
+
+static int pca85xx_read(gpio_exp_t* self) {
+	return i2c_read(self->phy.port, self->phy.addr, 0xff, 2);
+}
+
+static void pca85xx_write(gpio_exp_t* self) {
+	// all input must be set to 1 (open drain)
+	i2c_write(self->phy.port, self->phy.addr, 0xff, self->shadow | self->r_mask, true);
+}
+
+/****************************************************************************************
+ * MCP23017 family : init, direction, read and write
+ */
+static esp_err_t mcp23017_init(gpio_exp_t* self) {
+	/*
+	0111 x10x = same bank, mirrot single int, no sequentµial, open drain, active low
+	not sure about this funny change of mapping of the control register itself, really?
+	*/
+	esp_err_t err = i2c_write(self->phy.port, self->phy.addr, 0x05, 0x74, 1);
+	err |= i2c_write(self->phy.port, self->phy.addr, 0x0a, 0x74, 1);
+
+	// no interrupt on comparison or on change
+	err |= i2c_write(self->phy.port, self->phy.addr, 0x04, 0x00, 2);
+	err |= i2c_write(self->phy.port, self->phy.addr, 0x08, 0x00, 2);
+
+	return err;
+}
+
+static void mcp23017_set_direction(gpio_exp_t* self) {
+	// default to input and set real input to generate interrupt
+	i2c_write(self->phy.port, self->phy.addr, 0x00, ~self->w_mask, 2);
+	i2c_write(self->phy.port, self->phy.addr, 0x04, self->r_mask, 2);
+}
+
+static void mcp23017_set_pull_mode(gpio_exp_t* self) {
+	i2c_write(self->phy.port, self->phy.addr, 0x0c, self->pullup, 2);
+}
+
+static int mcp23017_read(gpio_exp_t* self) {
+	// read the pins value, not the stored one @interrupt
+	return i2c_read(self->phy.port, self->phy.addr, 0x12, 2);
+}
+
+static void mcp23017_write(gpio_exp_t* self) {
+	i2c_write(self->phy.port, self->phy.addr, 0x12, self->shadow, 2);
+}
+
+/****************************************************************************************
+ * MCP23s17 family : init, direction, read and write
+ */
+static esp_err_t mcp23s17_init(gpio_exp_t* self) {
+	self->spi_handle = spi_config(&self->phy);
+	
+	/*
+	0111 x10x = same bank, mirrot single int, no sequentµial, open drain, active low
+	not sure about this funny change of mapping of the control register itself, really?
+	*/
+	esp_err_t err = spi_write(self->spi_handle, self->phy.addr, 0x05, 0x74, 1);
+	err |= spi_write(self->spi_handle, self->phy.addr, 0x0a, 0x74, 1);
+
+	// no interrupt on comparison or on change
+	err |= spi_write(self->spi_handle, self->phy.addr, 0x04, 0x00, 2);
+	err |= spi_write(self->spi_handle, self->phy.addr, 0x08, 0x00, 2);
+
+	return err;
+}
+
+static void mcp23s17_set_direction(gpio_exp_t* self) {
+	// default to input and set real input to generate interrupt
+	spi_write(self->spi_handle, self->phy.addr, 0x00, ~self->w_mask, 2);
+	spi_write(self->spi_handle, self->phy.addr, 0x04, self->r_mask, 2);
+}
+
+static void mcp23s17_set_pull_mode(gpio_exp_t* self) {
+	spi_write(self->spi_handle, self->phy.addr, 0x0c, self->pullup, 2);
+}
+
+static int mcp23s17_read(gpio_exp_t* self) {
+	// read the pins value, not the stored one @interrupt
+	return spi_read(self->spi_handle, self->phy.addr, 0x12, 2);
+}
+
+static void mcp23s17_write(gpio_exp_t* self) {
+	spi_write(self->spi_handle, self->phy.addr, 0x12, self->shadow, 2);
+}
+
+/***************************************************************************************
+                                     I2C low level                                   
+***************************************************************************************/
+
+/****************************************************************************************
+ * I2C write up to 32 bits
+ */
+static esp_err_t i2c_write(uint8_t port, uint8_t addr, uint8_t reg, uint32_t data, int len) {
 	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
 	
-	i2c_master_write_byte(cmd, (i2c_addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_NACK);
+	i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_NACK);
 	if (reg != 0xff) i2c_master_write_byte(cmd, reg, I2C_MASTER_NACK);
-	i2c_master_write(cmd, (uint8_t*) &data, 2, I2C_MASTER_NACK);
+
+	// works with out endianness
+	if (len > 1) i2c_master_write(cmd, (uint8_t*) &data, len, I2C_MASTER_NACK);
+	else i2c_master_write_byte(cmd, data, I2C_MASTER_NACK);
     
 	i2c_master_stop(cmd);
-	esp_err_t ret = i2c_master_cmd_begin(i2c_port, cmd, 100 / portTICK_RATE_MS);
+	esp_err_t ret = i2c_master_cmd_begin(port, cmd, 100 / portTICK_RATE_MS);
     i2c_cmd_link_delete(cmd);
 	
 	if (ret != ESP_OK) {		
@@ -597,4 +612,99 @@ static esp_err_t i2c_write_word(uint8_t i2c_port, uint8_t i2c_addr, uint8_t reg,
 	}
 	
     return ret;
+}
+
+/****************************************************************************************
+ * I2C read up to 32 bits
+ */
+static uint32_t i2c_read(uint8_t port, uint8_t addr, uint8_t reg, int len) {
+	uint32_t data = 0;
+	
+	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_NACK);
+
+	// when using a register, write it's value then the device address again
+	if (reg != 0xff) {
+		i2c_master_write_byte(cmd, reg, I2C_MASTER_NACK);
+		i2c_master_start(cmd);
+		i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_READ, I2C_MASTER_NACK);
+	}
+	
+	// works with out endianness
+	if (len > 1) i2c_master_read(cmd, (uint8_t*) &data, len, I2C_MASTER_LAST_NACK);
+	else i2c_master_read_byte(cmd, (uint8_t*) &data, I2C_MASTER_NACK);
+		
+    i2c_master_stop(cmd);
+    esp_err_t ret = i2c_master_cmd_begin(port, cmd, 100 / portTICK_RATE_MS);
+    i2c_cmd_link_delete(cmd);
+	
+	if (ret != ESP_OK) {
+		ESP_LOGW(TAG, "I2C read failed");
+	}
+
+	return data;
+}
+
+/***************************************************************************************
+                                     SPI low level                                   
+***************************************************************************************/
+
+/****************************************************************************************
+ * SPI device addition
+ */
+static spi_device_handle_t spi_config(struct gpio_exp_phy_s *phy) {
+    spi_device_interface_config_t config;
+    spi_device_handle_t handle = NULL;
+
+	// initialize ChipSelect (CS)
+	gpio_set_direction(phy->cs_pin, GPIO_MODE_OUTPUT );
+	gpio_set_level(phy->cs_pin, 0 );
+	
+    memset( &config, 0, sizeof( spi_device_interface_config_t ) );
+
+	config.command_bits = config.address_bits = 8;
+    config.clock_speed_hz = phy->speed ? phy->speed : SPI_MASTER_FREQ_8M;
+    config.spics_io_num = phy->cs_pin;
+    config.queue_size = 1;
+	config.flags = SPI_DEVICE_NO_DUMMY;
+
+    spi_bus_add_device( phy->host, &config, &handle );
+
+	return handle;
+}
+
+/****************************************************************************************
+ * SPI write up to 32 bits
+ */
+static esp_err_t spi_write(spi_device_handle_t handle, uint8_t addr, uint8_t reg, uint32_t data, int len) {
+    spi_transaction_t transaction = { };
+
+	// rx_buffer is NULL, nothing to receive
+	transaction.flags = SPI_TRANS_USE_TXDATA;
+	transaction.cmd = addr << 1;
+	transaction.addr = reg;
+	transaction.tx_data[1] = data; transaction.tx_data[2] = data >> 8;
+	transaction.length = len * 8;
+
+	// only do polling as we don't have contention on SPI (otherwise DMA for transfers > 16 bytes)		
+	return spi_device_polling_transmit(handle, &transaction);
+}
+
+/****************************************************************************************
+ * SPI read up to 32 bits
+ */
+static uint32_t spi_read(spi_device_handle_t handle, uint8_t addr, uint8_t reg, int len) {
+	spi_transaction_t transaction = { };
+
+	// tx_buffer is NULL, nothing to transmit except cmd/addr
+	transaction.flags = SPI_TRANS_USE_RXDATA;
+	transaction.cmd = (addr << 1) | 1;
+	transaction.addr = reg;
+	transaction.length = len * 8;
+
+	// only do polling as we don't have contention on SPI (otherwise DMA for transfers > 16 bytes)		
+	spi_device_polling_transmit(handle, &transaction);
+	return *(uint32_t*) transaction.rx_data;
 }

@@ -19,12 +19,15 @@ typedef struct {
 	uint8_t intr;
 	uint8_t count;
 	uint32_t base;
-	union gpio_exp_phy_u {
-		struct {
-			uint8_t addr, port;
+	struct gpio_exp_phy_s {
+		uint8_t addr;
+		struct {				// for I2C
+			uint8_t port;
 		};
-		struct {
-			uint8_t cs_pin;
+		struct {				// for SPI
+			uint32_t speed;	
+			uint8_t host;	
+			uint8_t cs_pin; 		
 		};
 	} phy;	
 } gpio_exp_config_t;

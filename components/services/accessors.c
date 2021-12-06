@@ -491,7 +491,7 @@ const gpio_exp_config_t* config_gpio_exp_get(int index) {
 
 	// re-initialize config every time
 	memset(&config, 0, sizeof(config));
-	config.intr = -1; config.count = 16; config.base = GPIO_NUM_MAX; config.phy.port = i2c_system_port;
+	config.intr = -1; config.count = 16; config.base = GPIO_NUM_MAX; config.phy.port = i2c_system_port; config.phy.host = spi_system_host;
 
 	nvs_item = config_alloc_get(NVS_TYPE_STR, "gpio_exp_config");
 	if (!nvs_item || !*nvs_item) return NULL;
@@ -505,6 +505,8 @@ const gpio_exp_config_t* config_gpio_exp_get(int index) {
 	}
 
 	if ((p = strcasestr(item, "addr")) != NULL) config.phy.addr = atoi(strchr(p, '=') + 1);
+	if ((p = strcasestr(item, "cs_pin")) != NULL) config.phy.cs_pin = atoi(strchr(p, '=') + 1);
+	if ((p = strcasestr(item, "speed")) != NULL) config.phy.speed = atoi(strchr(p, '=') + 1);
 	if ((p = strcasestr(item, "intr")) != NULL) config.intr = atoi(strchr(p, '=') + 1);
 	if ((p = strcasestr(item, "base")) != NULL) config.base = atoi(strchr(p, '=') + 1);
 	if ((p = strcasestr(item, "count")) != NULL) config.count = atoi(strchr(p, '=') + 1);
