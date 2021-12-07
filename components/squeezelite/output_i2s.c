@@ -190,11 +190,10 @@ static void set_amp_gpio(int gpio, char *value) {
  * Set pin from config string
  */
 static void set_i2s_pin(char *config, i2s_pin_config_t *pin_config) {
-	char *p;
 	pin_config->bck_io_num = pin_config->ws_io_num = pin_config->data_out_num = pin_config->data_in_num = -1; 				
-	if ((p = strcasestr(config, "bck")) != NULL) pin_config->bck_io_num = atoi(strchr(p, '=') + 1);
-	if ((p = strcasestr(config, "ws")) != NULL) pin_config->ws_io_num = atoi(strchr(p, '=') + 1);
-	if ((p = strcasestr(config, "do")) != NULL) pin_config->data_out_num = atoi(strchr(p, '=') + 1);
+	PARSE_PARAM(config, "bck", '=', pin_config->bck_io_num);
+	PARSE_PARAM(config, "ws", '=', pin_config->ws_io_num);
+	PARSE_PARAM(config, "do", '=', pin_config->data_out_num);
 }
 
 /****************************************************************************************

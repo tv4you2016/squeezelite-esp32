@@ -234,10 +234,10 @@ void led_svc_init(void) {
 	parse_set_GPIO(set_led_gpio);
 #endif
 
-	char *nvs_item = config_alloc_get(NVS_TYPE_STR, "led_brightness"), *p; 
+	char *nvs_item = config_alloc_get(NVS_TYPE_STR, "led_brightness"); 
 	if (nvs_item) {
-		if ((p = strcasestr(nvs_item, "green")) != NULL) green.pwm = atoi(strchr(p, '=') + 1);
-		if ((p = strcasestr(nvs_item, "red")) != NULL) red.pwm = atoi(strchr(p, '=') + 1);
+		PARSE_PARAM(nvs_item, "green", '=', green.pwm);
+		PARSE_PARAM(nvs_item, "red", '=', red.pwm);
 		free(nvs_item);
 	}
 

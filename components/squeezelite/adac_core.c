@@ -17,6 +17,11 @@
 #include "esp_log.h"
 #include "adac.h"
 
+#define PARSE_PARAM(S,P,C,V) do {									\
+	char *__p;														\
+	if ((__p = strcasestr(S, P)) && (__p = strchr(__p, C))) V = atoi(__p+1); \
+} while (0)
+
 static const char TAG[] = "DAC core";
 static int i2c_port = -1;
 
@@ -46,9 +51,9 @@ int adac_init(char *config, int i2c_port_num) {
 			.master.clk_speed = 250000,
 		};
 
-	if ((p = strcasestr(config, "i2c")) != NULL) i2c_addr = atoi(strchr(p, '=') + 1);
-	if ((p = strcasestr(config, "sda")) != NULL) i2c_config.sda_io_num = atoi(strchr(p, '=') + 1);
-	if ((p = strcasestr(config, "scl")) != NULL) i2c_config.scl_io_num = atoi(strchr(p, '=') + 1);
+	PARSE_PARAM(config, "i2c", '=', i2c_addr);
+	PARSE_PARAM(config, "sda", '=', i2c_config.sda_io_num);
+	PARSE_PARAM(config, "scl", '=', i2c_config.scl_io_num);
 
 	if (i2c_config.sda_io_num == -1 || i2c_config.scl_io_num == -1) {
 		ESP_LOGW(TAG, "DAC does not use i2c");

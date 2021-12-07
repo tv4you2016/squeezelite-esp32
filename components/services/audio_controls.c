@@ -137,10 +137,10 @@ esp_err_t actrls_init(const char *profile_name) {
 		int A = -1, B = -1, SW = -1, longpress = 0;
 		
 		// parse config
-		if ((p = strcasestr(config, "A")) != NULL) A = atoi(strchr(p, '=') + 1);
-		if ((p = strcasestr(config, "B")) != NULL) B = atoi(strchr(p, '=') + 1);
-		if ((p = strcasestr(config, "SW")) != NULL) SW = atoi(strchr(p, '=') + 1);
-		if ((p = strcasestr(config, "knobonly")) != NULL) {
+		PARSE_PARAM(config, "A", '=', A);
+		PARSE_PARAM(config, "B", '=', B);
+		PARSE_PARAM(config, "SW", '=', SW);
+		if ((p = strcasestr(config, "knobonly"))) {
 			p = strchr(p, '=');
 			int double_press = p ? atoi(p + 1) : 350;
 			rotary.timer = xTimerCreate("knobTimer", double_press / portTICK_RATE_MS, pdFALSE, NULL, rotary_timer);

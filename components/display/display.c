@@ -71,11 +71,11 @@ void display_init(char *welcome) {
 	char *config = config_alloc_get_str("display_config", CONFIG_DISPLAY_CONFIG, "N/A");
 	
 	int width = -1, height = -1, backlight_pin = -1;
-	char *p, *drivername = strstr(config, "driver");
+	char *drivername = strstr(config, "driver");
 
-	if ((p = strcasestr(config, "width")) != NULL) width = atoi(strchr(p, '=') + 1);
-	if ((p = strcasestr(config, "height")) != NULL) height = atoi(strchr(p, '=') + 1);
-	if ((p = strcasestr(config, "back")) != NULL) backlight_pin = atoi(strchr(p, '=') + 1);	
+	PARSE_PARAM(config, "width", '=', width);
+	PARSE_PARAM(config, "height", '=', height);
+	PARSE_PARAM(config, "back", '=', backlight_pin);
 		
 	// query drivers to see if we have a match
 	ESP_LOGI(TAG, "Trying to configure display with %s", config);
@@ -89,13 +89,13 @@ void display_init(char *welcome) {
 	// so far so good
 	if (display && width > 0 && height > 0) {
 		int RST_pin = -1;
-		if ((p = strcasestr(config, "reset")) != NULL) RST_pin = atoi(strchr(p, '=') + 1);
+		PARSE_PARAM(config, "reset", '=', RST_pin);
 		
 		// Detect driver interface
 		if (strcasestr(config, "I2C") && i2c_system_port != -1) {
 			int address = 0x3C;
 				
-			if ((p = strcasestr(config, "address")) != NULL) address = atoi(strchr(p, '=') + 1);
+			PARSE_PARAM(config, "address", '=', address);
 				
 			init = true;
 			GDS_I2CInit( i2c_system_port, -1, -1, i2c_system_speed ) ;
@@ -105,8 +105,8 @@ void display_init(char *welcome) {
 		} else if (strcasestr(config, "SPI") && spi_system_host != -1) {
 			int CS_pin = -1, speed = 0;
 		
-			if ((p = strcasestr(config, "cs")) != NULL) CS_pin = atoi(strchr(p, '=') + 1);
-			if ((p = strcasestr(config, "speed")) != NULL) speed = atoi(strchr(p, '=') + 1);
+			PARSE_PARAM(config, "cs", '=', CS_pin);
+			PARSE_PARAM(config, "speed", '=', speed);
 		
 			init = true;
 			GDS_SPIInit( spi_system_host, spi_system_dc_gpio );
@@ -279,8 +279,8 @@ void displayer_metadata(char *artist, char *album, char *title) {
 	}
 	
 	// get optional scroll speed & pause
-	if ((p = strcasestr(displayer.metadata_config, "speed")) != NULL) sscanf(p, "%*[^=]=%d", &displayer.speed);
-	if ((p = strcasestr(displayer.metadata_config, "pause")) != NULL) sscanf(p, "%*[^=]=%d", &displayer.pause);
+	PARSE_PARAM(displayer.metadata_config, "speed", '=', displayer.speed);
+	PARSE_PARAM(displayer.metadata_config, "pause", '=', displayer.pause);
 	
 	displayer.offset = 0;	
 	utf8_decode(displayer.string);

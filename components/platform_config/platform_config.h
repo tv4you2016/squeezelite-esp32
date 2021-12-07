@@ -9,6 +9,19 @@
 extern "C" {
 #endif
 
+#define PARSE_PARAM(S,P,C,V) do {												\
+	char *__p;																	\
+	if ((__p = strcasestr(S, P)) && (__p = strchr(__p, C))) V = atoi(__p+1); 	\
+} while (0)
+
+#define PARSE_PARAM_STR(S,P,C,V,I) do {						\
+	char *__p;                                              \
+	if ((__p = strstr(S, P)) && (__p = strchr(__p, C))) {	\
+		while (*++__p == ' ');								\
+		sscanf(__p,"%" #I "[^,]", V);						\
+	}   													\
+} while (0)
+
 #define DECLARE_SET_DEFAULT(t) void config_set_default_## t (const char *key, t  value);
 #define DECLARE_GET_NUM(t) esp_err_t config_get_## t (const char *key, t *  value);
 #ifndef FREE_RESET
