@@ -43,7 +43,7 @@ jobs:
         path: |
           build
           /var/lib/docker
-        key: ${{ runner.os }}-${{ matrix.node }}-${{ matrix.depth }}
+        key: idf4.3-${{ runner.os }}-${{ matrix.node }}-${{ matrix.depth }}
     - name: Set build parameters
       run: |
         git update-index --chmod=+x ./server_certs/getcert.sh
