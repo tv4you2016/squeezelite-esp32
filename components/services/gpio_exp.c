@@ -161,17 +161,22 @@ gpio_exp_t* gpio_exp_create(const gpio_exp_config_t *config) {
 
 	// well... try again
 	if (!expander->model) {
-		ESP_LOGE(TAG,"Unknown GPIO expansion chip %s", config->model);
+		ESP_LOGE(TAG, "Unknown GPIO expansion chip %s", config->model);
 		return NULL;
 	}
 		
+	memcpy(&expander->phy, &config->phy, sizeof(struct gpio_exp_phy_s));
+
+	// try to initialize the expander if required
+	if (expander->model->init && expander->model->init(expander) != ESP_OK) {
+		ESP_LOGE(TAG, "Cannot create GPIO expander %s, check i2c/spi configuration", config->model);
+		return NULL;
+	}
+
 	n_expanders++;
 	expander->first = config->base;
 	expander->last = config->base + config->count - 1;
 	expander->mutex = xSemaphoreCreateMutex();
-
-	memcpy(&expander->phy, &config->phy, sizeof(struct gpio_exp_phy_s));
-	if (expander->model->init) expander->model->init(expander);
 
 	// create a task to handle asynchronous requests (only write at this time)
 	if (!message_queue) {
@@ -207,7 +212,7 @@ gpio_exp_t* gpio_exp_create(const gpio_exp_config_t *config) {
 		gpio_intr_enable(config->intr);						
 	}
 	
-	ESP_LOGI(TAG, "Create GPIO expander %s at base %u with INT %u at @%x on port %d", config->model, config->base, config->intr, config->phy.addr, config->phy.port);
+	ESP_LOGI(TAG, "Create GPIO expander %s at base %u with INT %u at @%x on port/host %d/%d", config->model, config->base, config->intr, config->phy.addr, config->phy.port, config->phy.host);
 	return expander;
 }
 
@@ -550,7 +555,7 @@ static void mcp23017_write(gpio_exp_t* self) {
  * MCP23s17 family : init, direction, read and write
  */
 static esp_err_t mcp23s17_init(gpio_exp_t* self) {
-	self->spi_handle = spi_config(&self->phy);
+	if ((self->spi_handle = spi_config(&self->phy)) == NULL) return ESP_ERR_INVALID_ARG;
 	
 	/*
 	0111 x10x = same bank, mirrot single int, no sequentµial, open drain, active low
@@ -655,14 +660,8 @@ static uint32_t i2c_read(uint8_t port, uint8_t addr, uint8_t reg, int len) {
  * SPI device addition
  */
 static spi_device_handle_t spi_config(struct gpio_exp_phy_s *phy) {
-    spi_device_interface_config_t config;
+    spi_device_interface_config_t config = { };
     spi_device_handle_t handle = NULL;
-
-	// initialize ChipSelect (CS)
-	gpio_set_direction(phy->cs_pin, GPIO_MODE_OUTPUT );
-	gpio_set_level(phy->cs_pin, 0 );
-	
-    memset( &config, 0, sizeof( spi_device_interface_config_t ) );
 
 	config.command_bits = config.address_bits = 8;
     config.clock_speed_hz = phy->speed ? phy->speed : SPI_MASTER_FREQ_8M;
@@ -671,6 +670,7 @@ static spi_device_handle_t spi_config(struct gpio_exp_phy_s *phy) {
 	config.flags = SPI_DEVICE_NO_DUMMY;
 
     spi_bus_add_device( phy->host, &config, &handle );
+	ESP_LOGI(TAG, "SPI expander initialized on host:%d with cs:%d and speed:%dHz", phy->host, phy->cs_pin, config.clock_speed_hz);
 
 	return handle;
 }
@@ -685,7 +685,7 @@ static esp_err_t spi_write(spi_device_handle_t handle, uint8_t addr, uint8_t reg
 	transaction.flags = SPI_TRANS_USE_TXDATA;
 	transaction.cmd = addr << 1;
 	transaction.addr = reg;
-	transaction.tx_data[1] = data; transaction.tx_data[2] = data >> 8;
+	transaction.tx_data[0] = data; transaction.tx_data[1] = data >> 8;
 	transaction.length = len * 8;
 
 	// only do polling as we don't have contention on SPI (otherwise DMA for transfers > 16 bytes)		
@@ -696,15 +696,18 @@ static esp_err_t spi_write(spi_device_handle_t handle, uint8_t addr, uint8_t reg
  * SPI read up to 32 bits
  */
 static uint32_t spi_read(spi_device_handle_t handle, uint8_t addr, uint8_t reg, int len) {
-	spi_transaction_t transaction = { };
+	spi_transaction_t *transaction = heap_caps_calloc(1, sizeof(spi_transaction_t), MALLOC_CAP_DMA);
 
 	// tx_buffer is NULL, nothing to transmit except cmd/addr
-	transaction.flags = SPI_TRANS_USE_RXDATA;
-	transaction.cmd = (addr << 1) | 1;
-	transaction.addr = reg;
-	transaction.length = len * 8;
+	transaction->flags = SPI_TRANS_USE_RXDATA;
+	transaction->cmd = (addr << 1) | 0x01;
+	transaction->addr = reg;
+	transaction->length = len * 8;
 
 	// only do polling as we don't have contention on SPI (otherwise DMA for transfers > 16 bytes)		
-	spi_device_polling_transmit(handle, &transaction);
-	return *(uint32_t*) transaction.rx_data;
+	spi_device_polling_transmit(handle, transaction);
+	uint32_t data = *(uint32_t*) transaction->rx_data;
+	free(transaction);
+
+	return data;
 }

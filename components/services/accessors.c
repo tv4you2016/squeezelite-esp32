@@ -507,7 +507,7 @@ const gpio_exp_config_t* config_gpio_exp_get(int index) {
 	}
 
 	PARSE_PARAM(item, "addr", '=', config.phy.addr);
-	PARSE_PARAM(item, "cs_pin", '=', config.phy.cs_pin);
+	PARSE_PARAM(item, "cs", '=', config.phy.cs_pin);
 	PARSE_PARAM(item, "speed", '=', config.phy.speed);
 	PARSE_PARAM(item, "intr", '=', config.intr);
 	PARSE_PARAM(item, "base", '=', config.base);
@@ -617,7 +617,7 @@ const spi_bus_config_t * config_spi_get(spi_host_device_t * spi_host) {
 		PARSE_PARAM(nvs_item, "mosi", '=', spi.mosi_io_num);
 		PARSE_PARAM(nvs_item, "miso", '=', spi.miso_io_num);
 		PARSE_PARAM(nvs_item, "clk", '=', spi.sclk_io_num);
-		PARSE_PARAM(nvs_item, "dd", '=', spi_system_dc_gpio);
+		PARSE_PARAM(nvs_item, "dc", '=', spi_system_dc_gpio);
 		// only VSPI (1) can be used as Flash and PSRAM run at 80MHz
 		// if ((p = strcasestr(nvs_item, "host")) != NULL) spi_system_host = atoi(strchr(p, '=') + 1);
 		free(nvs_item);
