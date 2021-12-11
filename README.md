@@ -269,8 +269,7 @@ model=<model>,addr=<addr>,[,port=system|dac][,base=<n>|100][,count=<n>|16][,intr
 - count: number of GPIO of expander (default 16 - might be obsolted if model if sufficient to decide)
 - intr: real GPIO to use as interrupt.
 	
-Each expander must be 	
-Note that PWM ("led_brightness" below) is not supported for expanded GPIOs and they cannot be used for high speed or precise timing signals like CS, D/C, Reset and Ready. Buttons, rotary encoder, amplifier control and power are supported. Depending on the actual chipset, pullup or pulldown might be supported so you might have to add external resistors (only MCP23x17 does pullup)
+Note that PWM ("led_brightness" below) is not supported for expanded GPIOs and they cannot be used for high speed or precise timing signals like CS, D/C, Reset and Ready. Buttons, rotary encoder, amplifier control and power are supported. Depending on the actual chipset, pullup or pulldown might be supported so you might have to add external resistors (only MCP23x17 does pullup). Note that the same interrupt can be shared accross expanders, as long as they are using open drain or open collectors (which they probably all do)
 ### LED 
 See §**set_GPIO** for how to set the green and red LEDs. In addition, their brightness can be controlled using the "led_brigthness" parameter. The syntax is
 ```
