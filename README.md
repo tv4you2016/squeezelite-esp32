@@ -254,7 +254,7 @@ You can define the defaults for jack, spkfault leds at compile time but nvs para
 ### GPIO expanders
 It is possible to add GPIO expanders using I2C or SPI bus. They should mainly be used for buttons but they can support generic-purpose outputs as well. These additional GPIOs can be numbered starting from an arbitrary value (40 and above as esp32 has GPIO 0..39). Then these new "virtual" GPIOs from (e.g) 100 to 115 can be used in button configuration, set_GPIO or other config settings.
 
-Each expander can support up to 32 GPIO. To use an expander for buttons, an interrupt must be provided, polling mode is not acceptable. An expander w/o interruption can still be configured, but only output will be usable.
+Each expander can support up to 32 GPIO. To use an expander for buttons, an interrupt must be provided, polling mode is not acceptable. An expander w/o interruption can still be configured, but only output will be usable. Note that the same interrupt can be shared accross expanders, as long as they are using open drain or open collectors (which they probably all do)
 
 The parameter "gpio_exp_config" is a semicolon (;) separated list with following syntax for each expander
 ```
@@ -269,7 +269,7 @@ model=<model>,addr=<addr>,[,port=system|dac][,base=<n>|100][,count=<n>|16][,intr
 - count: number of GPIO of expander (default 16 - might be obsolted if model if sufficient to decide)
 - intr: real GPIO to use as interrupt.
 	
-Note that PWM ("led_brightness" below) is not supported for expanded GPIOs and they cannot be used for high speed or precise timing signals like CS, D/C, Reset and Ready. Buttons, rotary encoder, amplifier control and power are supported. Depending on the actual chipset, pullup or pulldown might be supported so you might have to add external resistors (only MCP23x17 does pullup). Note that the same interrupt can be shared accross expanders, as long as they are using open drain or open collectors (which they probably all do)
+Note that PWM ("led_brightness" below) is not supported for expanded GPIOs and they cannot be used for high speed or precise timing signals like CS, D/C, Reset and Ready. Buttons, rotary encoder, amplifier control and power are supported. Depending on the actual chipset, pullup or pulldown might be supported so you might have to add external resistors (only MCP23x17 does pullup). 
 ### LED 
 See §**set_GPIO** for how to set the green and red LEDs. In addition, their brightness can be controlled using the "led_brigthness" parameter. The syntax is
 ```
