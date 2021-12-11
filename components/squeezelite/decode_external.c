@@ -37,6 +37,8 @@ static EXT_RAM_ATTR struct {
 } raop_sync;
 #endif
 
+static bool abort_sink ;
+
 #define LOCK_O   mutex_lock(outputbuf->mutex)
 #define UNLOCK_O mutex_unlock(outputbuf->mutex)
 #define LOCK_D   mutex_lock(decode.mutex);
@@ -63,11 +65,12 @@ static void sink_data_handler(const uint8_t *data, uint32_t len)
 		LOG_SDEBUG("Cannot use external sink while LMS is controlling player");
 		return;
 	} 
-	
-	// there will always be room at some point
-	while (len) {
-		LOCK_O;
 
+	LOCK_O;
+	abort_sink = false;
+
+	// there will always be room at some point
+	while (len && wait && !abort_sink) {
 		bytes = min(_buf_space(outputbuf), _buf_cont_write(outputbuf)) / (BYTES_PER_FRAME / 4);
 		bytes = min(len, bytes);
 #if BYTES_PER_FRAME == 4
@@ -86,11 +89,16 @@ static void sink_data_handler(const uint8_t *data, uint32_t len)
 		len -= bytes;
 		data += bytes;
 				
-		UNLOCK_O;
-		
 		// allow i2s to empty the buffer if needed
-		if (len && !space && wait--) usleep(20000);
+		if (len && !space) {
+			wait--;
+			UNLOCK_O;
+			usleep(50000);
+			LOCK_O;
+		}
 	}	
+
+	UNLOCK_O;
 	
 	if (!wait) {
 		LOG_WARN("Waited too long, dropping frames");
@@ -105,7 +113,7 @@ static bool bt_sink_cmd_handler(bt_sink_cmd_t cmd, va_list args)
 {
 	// don't LOCK_O as there is always a chance that LMS takes control later anyway
 	if (output.external != DECODE_BT && output.state > OUTPUT_STOPPED) {
-		LOG_WARN("Cannot use BT sink while LMS/AirPlay is controlling player");
+		LOG_WARN("Cannot use BT sink while LMS/AirPlay are controlling player");
 		return false;
 	} 	
 
@@ -115,11 +123,11 @@ static bool bt_sink_cmd_handler(bt_sink_cmd_t cmd, va_list args)
 		
 	switch(cmd) {
 	case BT_SINK_AUDIO_STARTED:
+		_buf_flush(outputbuf);
 		output.next_sample_rate = output.current_sample_rate = va_arg(args, u32_t);
 		output.external = DECODE_BT;
 		output.state = OUTPUT_STOPPED;
 		output.frames_played = 0;
-		_buf_flush(outputbuf);
 		if (decode.state != DECODE_STOPPED) decode.state = DECODE_ERROR;
 		LOG_INFO("BT sink started");
 		break;
@@ -132,17 +140,18 @@ static bool bt_sink_cmd_handler(bt_sink_cmd_t cmd, va_list args)
 		break;
 	case BT_SINK_PLAY:
 		output.state = OUTPUT_RUNNING;
-		LOG_INFO("BT playing");
+		LOG_INFO("BT play");
 		break;
 	case BT_SINK_STOP:		
 		_buf_flush(outputbuf);
 		output.state = OUTPUT_STOPPED;
 		output.stop_time = gettime_ms();
-		LOG_INFO("BT stopped");
+		abort_sink = true;
+		LOG_INFO("BT stop");
 		break;
 	case BT_SINK_PAUSE:		
 		output.stop_time = gettime_ms();
-		LOG_INFO("BT paused, just silence");
+		LOG_INFO("BT pause, just silence");
 		break;
 	case BT_SINK_RATE:
 		output.next_sample_rate = output.current_sample_rate = va_arg(args, u32_t);
@@ -184,7 +193,7 @@ static bool raop_sink_cmd_handler(raop_event_t event, va_list args)
 {
 	// don't LOCK_O as there is always a chance that LMS takes control later anyway
 	if (output.external != DECODE_RAOP && output.state > OUTPUT_STOPPED) {
-		LOG_WARN("Cannot use Airplay sink while LMS/BT is controlling player");
+		LOG_WARN("Cannot use Airplay sink while LMS/BT are controlling player");
 		return false;
 	} 	
 
@@ -269,6 +278,7 @@ static bool raop_sink_cmd_handler(raop_event_t event, va_list args)
 			raop_state = event;
 			_buf_flush(outputbuf);		
 			if (output.state > OUTPUT_STOPPED) output.state = OUTPUT_STOPPED;
+			abort_sink = true;
 			output.frames_played = 0;
 			output.stop_time = gettime_ms();
 			break;

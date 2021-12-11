@@ -16,7 +16,7 @@ struct gpio_exp_s;
 
 typedef struct {
 	char model[32];
-	uint8_t intr;
+	int intr;
 	uint8_t count;
 	uint32_t base;
 	struct gpio_exp_phy_s {

@@ -29,6 +29,8 @@
  
 typedef struct gpio_exp_s {
 	uint32_t first, last;
+	int intr;
+	bool intr_pending;
 	struct  {
 		struct gpio_exp_phy_s phy;
 		spi_device_handle_t spi_handle;
@@ -176,6 +178,7 @@ gpio_exp_t* gpio_exp_create(const gpio_exp_config_t *config) {
 	n_expanders++;
 	expander->first = config->base;
 	expander->last = config->base + config->count - 1;
+	expander->intr = config->intr;
 	expander->mutex = xSemaphoreCreateMutex();
 
 	// create a task to handle asynchronous requests (only write at this time)
@@ -189,7 +192,7 @@ gpio_exp_t* gpio_exp_create(const gpio_exp_config_t *config) {
 	}
 
 	// set interrupt if possible
-	if (config->intr > 0) {
+	if (config->intr >= 0) {
 		gpio_pad_select_gpio(config->intr);
 		gpio_set_direction(config->intr, GPIO_MODE_INPUT);
 
@@ -402,12 +405,16 @@ esp_err_t gpio_isr_handler_remove_x(int gpio) {
  * INTR low-level handler
  */
 static void IRAM_ATTR intr_isr_handler(void* arg) {
+	gpio_exp_t *self = (gpio_exp_t*) arg;
 	BaseType_t woken = pdFALSE;
+	
+	// activate all, including ourselves
+	for (int i = 0; i < n_expanders; i++) if (expanders[i].intr == self->intr) expanders[i].intr_pending = true; 
 	
 	xTaskNotifyFromISR(service_task, GPIO_EXP_INTR, eSetValueWithOverwrite, &woken);
 	if (woken) portYIELD_FROM_ISR();
 
-	ESP_EARLY_LOGD(TAG, "INTR for expander base %d", gpio_exp_get_base(arg));
+	ESP_EARLY_LOGD(TAG, "INTR for expander base %d", gpio_exp_get_base(self));
 }
 
 /****************************************************************************************
@@ -433,6 +440,18 @@ void service_handler(void *arg) {
 			   now, a loop will do */
 			for (int i = 0; i < n_expanders; i++) {
 				gpio_exp_t *expander = expanders + i;
+
+				// no interrupt for that gpio
+				if (expander->intr < 0) continue;
+
+				// only check expander with pending interrupts
+				gpio_intr_disable(expander->intr);
+				if (!expander->intr_pending) {
+					gpio_intr_enable(expander->intr);
+					continue;
+				}
+				expander->intr_pending = false;
+				gpio_intr_enable(expander->intr);
 				
 				xSemaphoreTake(expander->mutex, pdMS_TO_TICKS(50));
 
