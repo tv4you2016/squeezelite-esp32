@@ -92,9 +92,7 @@ static void sink_data_handler(const uint8_t *data, uint32_t len)
 		// allow i2s to empty the buffer if needed
 		if (len && !space) {
 			wait--;
-			UNLOCK_O;
-			usleep(50000);
-			LOCK_O;
+			UNLOCK_O; usleep(50000); LOCK_O;
 		}
 	}	
 
