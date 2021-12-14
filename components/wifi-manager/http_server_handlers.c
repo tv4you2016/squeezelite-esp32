@@ -353,6 +353,8 @@ static esp_err_t set_content_type_from_req(httpd_req_t *req)
 	   return ESP_FAIL;
    }
    set_content_type_from_file(req, filename);
+   // we might have to disallow keep-alive in the future
+   // httpd_resp_set_hdr(req, "Connection", "close");
    return ESP_OK;
 }
 
