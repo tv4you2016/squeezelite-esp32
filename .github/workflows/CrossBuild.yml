@@ -2,9 +2,11 @@
 name: Cross-Build
 on:
   push:
-    branches-ignore: [ master ethernet_idf4.3 ]
+    branches: 
+      - 'master-cmake'
   pull_request:
-    branches-ignore: [ master ethernet_idf4.3 ]
+    branches:
+      - 'master-cmake'
 
 jobs:
   job1:
