@@ -122,6 +122,7 @@ static bool bt_sink_cmd_handler(bt_sink_cmd_t cmd, va_list args)
 	switch(cmd) {
 	case BT_SINK_AUDIO_STARTED:
 		_buf_flush(outputbuf);
+		_buf_limit(outputbuf, 0);
 		output.next_sample_rate = output.current_sample_rate = va_arg(args, u32_t);
 		output.external = DECODE_BT;
 		output.state = OUTPUT_STOPPED;
@@ -251,15 +252,21 @@ static bool raop_sink_cmd_handler(raop_event_t event, va_list args)
 
 			break;
 		}
-		case RAOP_SETUP:
-			// we need a fair bit of space for RTP process
-			_buf_resize(outputbuf, RAOP_OUTPUT_SIZE);
+		case RAOP_SETUP: {
+			uint8_t **buffer = va_arg(args, uint8_t**);
+			size_t *size = va_arg(args, size_t*);
+
+			// steal buffer tail from outputbuf but do not reallocate
+			*size = _buf_limit(outputbuf, RAOP_OUTPUT_SIZE);
+			*buffer = outputbuf->writep + RAOP_OUTPUT_SIZE;
+
 			output.frames_played = 0;
 			output.external = DECODE_RAOP;
 			output.state = OUTPUT_STOPPED;
 			if (decode.state != DECODE_STOPPED) decode.state = DECODE_ERROR;
 			LOG_INFO("resizing buffer %u", outputbuf->size);
 			break;
+		}
 		case RAOP_STREAM:
 			LOG_INFO("Stream", NULL);
 			raop_state = event;
@@ -271,10 +278,9 @@ static bool raop_sink_cmd_handler(raop_event_t event, va_list args)
 			break;
 		case RAOP_STOP:
 		case RAOP_FLUSH:
-			if (event == RAOP_FLUSH) { LOG_INFO("Flush", NULL); }
-			else { LOG_INFO("Stop", NULL); }
+			LOG_INFO("%s", event == RAOP_FLUSH ? "Flush" : "Stop");
+			_buf_flush(outputbuf);
 			raop_state = event;
-			_buf_flush(outputbuf);		
 			if (output.state > OUTPUT_STOPPED) output.state = OUTPUT_STOPPED;
 			abort_sink = true;
 			output.frames_played = 0;

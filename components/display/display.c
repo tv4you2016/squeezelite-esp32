@@ -193,7 +193,7 @@ static void displayer_task(void *args) {
 		
 		// handler elapsed track time
 		if (displayer.timer && displayer.state == DISPLAYER_ACTIVE) {
-			char counter[16];
+			char line[20], duration[12] = "";
 			TickType_t tick = xTaskGetTickCount();
 			uint32_t elapsed = (tick - displayer.tick) * portTICK_PERIOD_MS;
 			
@@ -202,9 +202,14 @@ static void displayer_task(void *args) {
 				displayer.tick = tick;
 				displayer.elapsed += elapsed / 1000;
 				xSemaphoreGive(displayer.mutex);				
-				if (displayer.elapsed < 3600) snprintf(counter, 16, "%5u:%02u", displayer.elapsed / 60, displayer.elapsed % 60);
-				else snprintf(counter, 16, "%2u:%02u:%02u", displayer.elapsed / 3600, (displayer.elapsed % 3600) / 60, displayer.elapsed % 60);
-				GDS_TextLine(display, 1, GDS_TEXT_RIGHT, (GDS_TEXT_CLEAR | GDS_TEXT_CLEAR_EOL) | GDS_TEXT_UPDATE, counter);
+				if (displayer.duration > 0) {
+					if (displayer.duration < 3600) snprintf(duration, sizeof(duration), " / %u:%02u", displayer.duration / 60, displayer.duration % 60);
+					else snprintf(duration, sizeof(duration), " / %u:%02u:%02u", (displayer.duration / 3600) % 100, (displayer.duration % 3600) / 60, displayer.duration % 60);
+				}			
+				if (displayer.elapsed < 3600) snprintf(line, sizeof(line), "%*u:%02u", sizeof(line) - 1 - strlen(duration) - 3, displayer.elapsed / 60, displayer.elapsed % 60);
+				else snprintf(line, sizeof(line), "%*u:%02u:%02u", sizeof(line) - 1 - strlen(duration) - 6, (displayer.elapsed / 3600) % 100, (displayer.elapsed % 3600) / 60, displayer.elapsed % 60);
+				strcat(line, duration);
+				GDS_TextLine(display, 1, GDS_TEXT_RIGHT, (GDS_TEXT_CLEAR | GDS_TEXT_CLEAR_EOL) | GDS_TEXT_UPDATE, line);
 				timer_sleep = 1000;
 			} else timer_sleep = max(1000 - elapsed, 0);	
 		} else timer_sleep = DEFAULT_SLEEP;

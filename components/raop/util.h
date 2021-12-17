@@ -48,6 +48,16 @@ void 		winsock_init(void);
 void 		winsock_close(void);
 #else
 char 		*strlwr(char *str);
+
+// reason is that TCB might be cleanup in idle task
+#define SAFE_TCB_FREE(T)							\
+	do {											\
+		int priority = uxTaskPriorityGet(NULL);		\
+		vTaskPrioritySet(NULL, tskIDLE_PRIORITY);	\
+		vTaskDelay(1);								\
+		vTaskPrioritySet(NULL, priority);			\
+		heap_caps_free(T);							\
+	} while (0)
 #endif
 char* 		strextract(char *s1, char *beg, char *end);
 in_addr_t 	get_localhost(char **name);
@@ -67,5 +77,6 @@ char* 		kd_dump(key_data_t *kd);
 void 		kd_free(key_data_t *kd);
 
 int 		_fprintf(FILE *file, ...);
-#endif
+
+#endif
 
