@@ -255,7 +255,7 @@ void raop_delete(struct raop_ctx_s *ctx) {
 	vTaskDelay(100 / portTICK_PERIOD_MS);
 	ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
 	vTaskDelete(ctx->thread);
-	SAFE_TCB_FREE(ctx->xTaskBuffer);
+	SAFE_PTR_FREE(ctx->xTaskBuffer);
 
 	// cleanup all session-created items
 	cleanup_rtsp(ctx, true);
@@ -607,7 +607,6 @@ static bool handle_rtsp(raop_ctx_t *ctx, int sock)
 			sscanf(p, "%*[^:]:%u/%u/%u", &start, &current, &stop);
 			current = ((current - start) / 44100) * 1000;
 			if (stop) stop = ((stop - start) / 44100) * 1000;
-			else stop = -1;
 			LOG_INFO("[%p]: SET PARAMETER progress %d/%u %s", ctx, current, stop, p);
 			success = ctx->cmd_cb(RAOP_PROGRESS, max(current, 0), stop);
 		} else if (body && ((p = kd_lookup(headers, "Content-Type")) != NULL) && !strcasecmp(p, "application/x-dmap-tagged")) {
@@ -674,7 +673,7 @@ void cleanup_rtsp(raop_ctx_t *ctx, bool abort) {
 		ctx->active_remote.running = false;
 		xSemaphoreTake(ctx->active_remote.destroy_mutex, portMAX_DELAY);
 		vTaskDelete(ctx->active_remote.thread);
-		SAFE_TCB_FREE(ctx->active_remote.xTaskBuffer);
+		SAFE_PTR_FREE(ctx->active_remote.xTaskBuffer);
 		vSemaphoreDelete(ctx->active_remote.thread);
 #endif
 		memset(&ctx->active_remote, 0, sizeof(ctx->active_remote));

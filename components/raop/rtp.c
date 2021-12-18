@@ -313,7 +313,7 @@ void rtp_end(rtp_t *ctx)
 #else
 		ulTaskNotifyTake(pdFALSE, portMAX_DELAY);
 		vTaskDelete(ctx->thread);
-		SAFE_TCB_FREE(ctx->xTaskBuffer);
+		SAFE_PTR_FREE(ctx->xTaskBuffer);
 #endif
 	}
 	

@@ -41,7 +41,12 @@ static EXT_RAM_ATTR struct {
 	int offset, boundary;
 	char *metadata_config;
 	bool timer, refresh;
-	uint32_t elapsed, duration;
+	uint32_t elapsed;
+	struct {
+		uint32_t value;
+		char string[8]; // H:MM:SS
+		bool visible;
+	} duration;
 	TickType_t tick;
 } displayer;
 
@@ -126,7 +131,7 @@ void display_init(char *welcome) {
 		static DRAM_ATTR StaticTask_t xTaskBuffer __attribute__ ((aligned (4)));
 		static EXT_RAM_ATTR StackType_t xStack[DISPLAYER_STACK_SIZE] __attribute__ ((aligned (4)));
 		
-		GDS_SetLayout( display, strcasestr(config, "HFlip"), strcasestr(config, "VFlip"), strcasestr(config, "rotate"));
+		GDS_SetLayout(display, strcasestr(config, "HFlip"), strcasestr(config, "VFlip"), strcasestr(config, "rotate"));
 		GDS_SetFont(display, &Font_droid_sans_fallback_15x17 );
 		GDS_TextPos(display, GDS_FONT_MEDIUM, GDS_TEXT_CENTERED, GDS_TEXT_CLEAR | GDS_TEXT_UPDATE, welcome);
 
@@ -193,23 +198,34 @@ static void displayer_task(void *args) {
 		
 		// handler elapsed track time
 		if (displayer.timer && displayer.state == DISPLAYER_ACTIVE) {
-			char line[20], duration[12] = "";
+			char line[19] = "-", *_line = line + 1; // [-]H:MM:SS / H:MM:SS
 			TickType_t tick = xTaskGetTickCount();
 			uint32_t elapsed = (tick - displayer.tick) * portTICK_PERIOD_MS;
-			
+
 			if (elapsed >= 1000) {
 				xSemaphoreTake(displayer.mutex, portMAX_DELAY);
 				displayer.tick = tick;
-				displayer.elapsed += elapsed / 1000;
-				xSemaphoreGive(displayer.mutex);				
-				if (displayer.duration > 0) {
-					if (displayer.duration < 3600) snprintf(duration, sizeof(duration), " / %u:%02u", displayer.duration / 60, displayer.duration % 60);
-					else snprintf(duration, sizeof(duration), " / %u:%02u:%02u", (displayer.duration / 3600) % 100, (displayer.duration % 3600) / 60, displayer.duration % 60);
-				}			
-				if (displayer.elapsed < 3600) snprintf(line, sizeof(line), "%*u:%02u", sizeof(line) - 1 - strlen(duration) - 3, displayer.elapsed / 60, displayer.elapsed % 60);
-				else snprintf(line, sizeof(line), "%*u:%02u:%02u", sizeof(line) - 1 - strlen(duration) - 6, (displayer.elapsed / 3600) % 100, (displayer.elapsed % 3600) / 60, displayer.elapsed % 60);
-				strcat(line, duration);
-				GDS_TextLine(display, 1, GDS_TEXT_RIGHT, (GDS_TEXT_CLEAR | GDS_TEXT_CLEAR_EOL) | GDS_TEXT_UPDATE, line);
+				elapsed = displayer.elapsed += elapsed / 1000;
+				xSemaphoreGive(displayer.mutex);
+
+				// when we have duration but no space, display remaining time
+				if (displayer.duration.value && !displayer.duration.visible) elapsed = displayer.duration.value - elapsed;
+
+				if (elapsed < 3600) sprintf(_line, "%u:%02u", elapsed / 60, elapsed % 60);
+				else sprintf(_line, "%u:%02u:%02u", (elapsed / 3600) % 100, (elapsed % 3600) / 60, elapsed % 60);
+
+				// concatenate if we have room for elapsed / duration
+				if (displayer.duration.visible) {
+					strcat(_line, "/");
+					strcat(_line, displayer.duration.string);
+				} else if (displayer.duration.value) {
+					_line--;
+				}
+
+				// just re-write the whole line it's easier
+				GDS_TextLine(display, 1, GDS_TEXT_LEFT, GDS_TEXT_CLEAR, displayer.header);	
+				GDS_TextLine(display, 1, GDS_TEXT_RIGHT, GDS_TEXT_UPDATE, _line);
+
 				timer_sleep = 1000;
 			} else timer_sleep = max(1000 - elapsed, 0);	
 		} else timer_sleep = DEFAULT_SLEEP;
@@ -323,9 +339,27 @@ void displayer_timer(enum displayer_time_e mode, int elapsed, int duration) {
 	
 	xSemaphoreTake(displayer.mutex, portMAX_DELAY);
 
-	if (elapsed >= 0) displayer.elapsed = elapsed / 1000;	
-	if (duration >= 0) displayer.duration = duration / 1000;
 	if (displayer.timer) displayer.tick = xTaskGetTickCount();
+	if (elapsed >= 0) displayer.elapsed = elapsed / 1000;	
+	if (duration > 0) {
+		displayer.duration.visible = true;
+		displayer.duration.value = duration / 1000;
+
+		if (displayer.duration.value > 3600) sprintf(displayer.duration.string, "%u:%02u:%02u", (displayer.duration.value / 3600) % 10,
+													(displayer.duration.value % 3600) / 60, displayer.duration.value % 60);
+		else sprintf(displayer.duration.string, "%u:%02u", displayer.duration.value / 60, displayer.duration.value % 60);
+
+		char *buf;
+		asprintf(&buf, "%s %s/%s", displayer.header, displayer.duration.string, displayer.duration.string);
+		if (GDS_GetTextWidth(display, 1, 0, buf) > GDS_GetWidth(display)) {
+			ESP_LOGW(TAG, "Can't fit duration %s (%d) on screen using elapsed only", buf, GDS_GetTextWidth(display, 1, 0, buf));
+			displayer.duration.visible = false;
+		}
+		free(buf);
+	} else if (!duration) {
+		displayer.duration.visible = false;
+		displayer.duration.value = 0;
+	}
 		
 	xSemaphoreGive(displayer.mutex);
 }	
@@ -350,7 +384,8 @@ void displayer_control(enum displayer_cmd_e cmd, ...) {
 		displayer.timer = false;
 		displayer.refresh = true;
 		displayer.string[0] = '\0';
-		displayer.elapsed = displayer.duration = 0;
+		displayer.elapsed = displayer.duration.value = 0;
+		displayer.duration.visible = false;
 		displayer.offset = displayer.boundary = 0;
 		display_bus(&displayer, DISPLAY_BUS_TAKE);
 		vTaskResume(displayer.task);
