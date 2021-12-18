@@ -60,24 +60,23 @@ static const char TAG[] = "gpio expander";
 static void   IRAM_ATTR intr_isr_handler(void* arg);
 static gpio_exp_t* find_expander(gpio_exp_t *expander, int *gpio);
 
-static void pca9535_set_direction(gpio_exp_t* self);
-static int  pca9535_read(gpio_exp_t* self);
-static void pca9535_write(gpio_exp_t* self);
+static void 	pca9535_set_direction(gpio_exp_t* self);
+static uint32_t pca9535_read(gpio_exp_t* self);
+static void 	pca9535_write(gpio_exp_t* self);
 
-static void pca85xx_set_direction(gpio_exp_t* self);
-static int  pca85xx_read(gpio_exp_t* self);
-static void pca85xx_write(gpio_exp_t* self);
+static uint32_t	pca85xx_read(gpio_exp_t* self);
+static void 	pca85xx_write(gpio_exp_t* self);
 
 static esp_err_t mcp23017_init(gpio_exp_t* self);
 static void      mcp23017_set_pull_mode(gpio_exp_t* self);
 static void      mcp23017_set_direction(gpio_exp_t* self);
-static int       mcp23017_read(gpio_exp_t* self);
+static uint32_t  mcp23017_read(gpio_exp_t* self);
 static void      mcp23017_write(gpio_exp_t* self);
 
 static esp_err_t mcp23s17_init(gpio_exp_t* self);
 static void      mcp23s17_set_pull_mode(gpio_exp_t* self);
 static void      mcp23s17_set_direction(gpio_exp_t* self);
-static int       mcp23s17_read(gpio_exp_t* self);
+static uint32_t  mcp23s17_read(gpio_exp_t* self);
 static void      mcp23s17_write(gpio_exp_t* self);
 
 static void   service_handler(void *arg);
@@ -94,7 +93,7 @@ static const struct gpio_exp_model_s {
 	char *model;
 	gpio_int_type_t trigger;
 	esp_err_t (*init)(gpio_exp_t* self);
-	int       (*read)(gpio_exp_t* self);
+	uint32_t  (*read)(gpio_exp_t* self);
 	void      (*write)(gpio_exp_t* self);
 	void      (*set_direction)(gpio_exp_t* self);
 	void      (*set_pull_mode)(gpio_exp_t* self);
@@ -106,7 +105,6 @@ static const struct gpio_exp_model_s {
 	  .write = pca9535_write, },
 	{ .model = "pca85xx",
 	  .trigger = GPIO_INTR_NEGEDGE, 
-	  .set_direction = pca85xx_set_direction,
 	  .read = pca85xx_read,
 	  .write = pca85xx_write, },
 	{ .model = "mcp23017",
@@ -215,7 +213,7 @@ gpio_exp_t* gpio_exp_create(const gpio_exp_config_t *config) {
 		gpio_intr_enable(config->intr);						
 	}
 	
-	ESP_LOGI(TAG, "Create GPIO expander %s at base %u with INT %u at @%x on port/host %d/%d", config->model, config->base, config->intr, config->phy.addr, config->phy.port, config->phy.host);
+	ESP_LOGI(TAG, "Create GPIO expander %s at base %u with INT %d at @%x on port/host %d/%d", config->model, config->base, config->intr, config->phy.addr, config->phy.port, config->phy.host);
 	return expander;
 }
 
@@ -475,7 +473,7 @@ void service_handler(void *arg) {
 		}
 
 		// check if we have some other pending requests
-		if (xQueueReceive(message_queue, &request, 0) == pdTRUE) {
+		while (xQueueReceive(message_queue, &request, 0) == pdTRUE) {
 			esp_err_t err = gpio_exp_set_level(request.gpio, request.level, true, request.expander);
 			if (err != ESP_OK) ESP_LOGW(TAG, "Can't execute async GPIO %d write request (%d)", request.gpio, err);  
 		}
@@ -508,7 +506,7 @@ static void pca9535_set_direction(gpio_exp_t* self) {
 	i2c_write(self->phy.port, self->phy.addr, 0x06, self->r_mask, 2);
 }
 
-static int pca9535_read(gpio_exp_t* self) {
+static uint32_t pca9535_read(gpio_exp_t* self) {
 	return i2c_read(self->phy.port, self->phy.addr, 0x00, 2);
 }
 
@@ -519,18 +517,24 @@ static void pca9535_write(gpio_exp_t* self) {
 /****************************************************************************************
  * PCA85xx family : read and write
  */
-static void pca85xx_set_direction(gpio_exp_t* self) {
-	// all inputs must be set to 1 (open drain) and output are left open as well
-	i2c_write(self->phy.port, self->phy.addr, 0xff, self->r_mask | self->w_mask, true);
-}
-
-static int pca85xx_read(gpio_exp_t* self) {
-	return i2c_read(self->phy.port, self->phy.addr, 0xff, 2);
+static uint32_t pca85xx_read(gpio_exp_t* self) {
+	// must return the full set of pins, not just inputs
+	uint32_t data = i2c_read(self->phy.port, self->phy.addr, 0xff, 2);
+	return (data & self->r_mask) | (self->shadow & ~self->r_mask);
 }
 
 static void pca85xx_write(gpio_exp_t* self) {
-	// all input must be set to 1 (open drain)
-	i2c_write(self->phy.port, self->phy.addr, 0xff, self->shadow | self->r_mask, true);
+	/* 
+	 There is no good option with this chip: normally, unused pin should be set to input
+	 to avoid any conflict but then they float and create tons of suprious. So option 1 is
+	 to le tthem float and option 2 is to set them as output to 0.
+	 In addition, setting an output pin to 1 equals is making it an input and if this is
+	 use to short a led (e.g.) instead of being the sink, the it generates a spurious
+	*/
+	// option 1 
+	// i2c_write(self->phy.port, self->phy.addr, 0xff, (self->shadow & self->w_mask) | ~self->w_mask, 2);
+	// option 2
+	i2c_write(self->phy.port, self->phy.addr, 0xff, (self->shadow & self->w_mask) | self->r_mask, 2);
 }
 
 /****************************************************************************************
@@ -561,7 +565,7 @@ static void mcp23017_set_pull_mode(gpio_exp_t* self) {
 	i2c_write(self->phy.port, self->phy.addr, 0x0c, self->pullup, 2);
 }
 
-static int mcp23017_read(gpio_exp_t* self) {
+static uint32_t mcp23017_read(gpio_exp_t* self) {
 	// read the pins value, not the stored one @interrupt
 	return i2c_read(self->phy.port, self->phy.addr, 0x12, 2);
 }
@@ -600,7 +604,7 @@ static void mcp23s17_set_pull_mode(gpio_exp_t* self) {
 	spi_write(self->spi_handle, self->phy.addr, 0x0c, self->pullup, 2);
 }
 
-static int mcp23s17_read(gpio_exp_t* self) {
+static uint32_t mcp23s17_read(gpio_exp_t* self) {
 	// read the pins value, not the stored one @interrupt
 	return spi_read(self->spi_handle, self->phy.addr, 0x12, 2);
 }
@@ -623,7 +627,7 @@ static esp_err_t i2c_write(uint8_t port, uint8_t addr, uint8_t reg, uint32_t dat
 	i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_NACK);
 	if (reg != 0xff) i2c_master_write_byte(cmd, reg, I2C_MASTER_NACK);
 
-	// works with out endianness
+	// works with our endianness
 	if (len > 1) i2c_master_write(cmd, (uint8_t*) &data, len, I2C_MASTER_NACK);
 	else i2c_master_write_byte(cmd, data, I2C_MASTER_NACK);
     
@@ -647,16 +651,18 @@ static uint32_t i2c_read(uint8_t port, uint8_t addr, uint8_t reg, int len) {
 	i2c_cmd_handle_t cmd = i2c_cmd_link_create();
 
     i2c_master_start(cmd);
-    i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_NACK);
 
 	// when using a register, write it's value then the device address again
 	if (reg != 0xff) {
+		i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_WRITE, I2C_MASTER_NACK);
 		i2c_master_write_byte(cmd, reg, I2C_MASTER_NACK);
 		i2c_master_start(cmd);
 		i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_READ, I2C_MASTER_NACK);
+	} else {
+		i2c_master_write_byte(cmd, (addr << 1) | I2C_MASTER_READ, I2C_MASTER_NACK);
 	}
 	
-	// works with out endianness
+	// works with our endianness
 	if (len > 1) i2c_master_read(cmd, (uint8_t*) &data, len, I2C_MASTER_LAST_NACK);
 	else i2c_master_read_byte(cmd, (uint8_t*) &data, I2C_MASTER_NACK);
 		
