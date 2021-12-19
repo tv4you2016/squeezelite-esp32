@@ -88,7 +88,6 @@ typedef struct {
 } gpio_entry_t;
 
 const display_config_t * 	config_display_get();
-const eth_config_t * 		config_eth_get( );
 esp_err_t 					config_display_set(const display_config_t * config);
 esp_err_t 					config_i2c_set(const i2c_config_t * config, int port);
 esp_err_t 					config_i2s_set(const i2s_platform_config_t * config, const char * nvs_name);

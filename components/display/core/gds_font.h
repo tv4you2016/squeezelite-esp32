@@ -46,7 +46,7 @@ typedef enum {
     TextAnchor_Center
 } TextAnchor;
 
-struct GDS_FontDef* GDS_SetFont( struct GDS_Device* Display, const struct GDS_FontDef* Font );
+const struct GDS_FontDef* GDS_SetFont( struct GDS_Device* Display, const struct GDS_FontDef* Font );
 
 void GDS_FontForceProportional( struct GDS_Device* Display, bool Force );
 void GDS_FontForceMonospace( struct GDS_Device* Display, bool Force );

@@ -98,7 +98,7 @@ void GDS_FontDrawChar( struct GDS_Device* Device, char Character, int x, int y, 
     }
 }
 
-struct GDS_FontDef* GDS_SetFont( struct GDS_Device* Display, const struct GDS_FontDef* Font ) {
+const struct GDS_FontDef* GDS_SetFont( struct GDS_Device* Display, const struct GDS_FontDef* Font ) {
 	const struct GDS_FontDef* OldFont = Display->Font;
 
     Display->FontForceProportional = false;

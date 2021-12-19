@@ -116,7 +116,7 @@ static void set_i2s_pin(char *config, i2s_pin_config_t *pin_config) {
 /****************************************************************************************
  * Get i2s config structure from config string
  */
-const i2s_platform_config_t * config_get_i2s_from_str(char * dac_config ){
+const i2s_platform_config_t * config_i2s_get_from_str(char * dac_config ){
 	static i2s_platform_config_t i2s_dac_pin = {
 		.i2c_addr = -1,
 		.sda= -1,
@@ -142,40 +142,12 @@ const i2s_platform_config_t * config_get_i2s_from_str(char * dac_config ){
 }
 
 /****************************************************************************************
- * Get eth config structure from config string
- */
-const eth_config_t * config_get_eth_from_str(char * config ){
-	static eth_config_t eth_config = {
-		.rmii = false,
-		.model = "",
-	};
-	
-	PARSE_PARAM_STR(config, "model", '=', eth_config.model, 15);
-	PARSE_PARAM(config, "mdc", '=', eth_config.mdc);
-	PARSE_PARAM(config, "mdio", '=', eth_config.mdio);
-	PARSE_PARAM(config, "rst", '=', eth_config.rst);
-	PARSE_PARAM(config, "mosi", '=', eth_config.mosi);
-	PARSE_PARAM(config, "miso", '=', eth_config.miso);
-	PARSE_PARAM(config, "intr", '=', eth_config.intr);
-	PARSE_PARAM(config, "cs", '=', eth_config.cs);
-	PARSE_PARAM(config, "speed", '=', eth_config.speed);
-	PARSE_PARAM(config, "clk", '=', eth_config.clk);
-
-	// only system host is available
-	eth_config.host = spi_system_host;
-
-	if (strcasestr(eth_config.model, "lan8720")) eth_config.rmii = true;
-	
-	return &eth_config;
-}
-
-/****************************************************************************************
  * Get spdif config structure 
  */
 const i2s_platform_config_t * config_spdif_get( ){
 	char * spdif_config = config_spdif_get_string();
 	static EXT_RAM_ATTR i2s_platform_config_t i2s_dac_config;
-	memcpy(&i2s_dac_config, config_get_i2s_from_str(spdif_config), sizeof(i2s_dac_config));
+	memcpy(&i2s_dac_config, config_i2s_get_from_str(spdif_config), sizeof(i2s_dac_config));
 	free(spdif_config);
 	return &i2s_dac_config;
 }
@@ -186,31 +158,9 @@ const i2s_platform_config_t * config_spdif_get( ){
 const i2s_platform_config_t * config_dac_get(){
 	char * spdif_config = get_dac_config_string();
 	static EXT_RAM_ATTR i2s_platform_config_t i2s_dac_config;
-	memcpy(&i2s_dac_config, config_get_i2s_from_str(spdif_config), sizeof(i2s_dac_config));
+	memcpy(&i2s_dac_config, config_i2s_get_from_str(spdif_config), sizeof(i2s_dac_config));
 	free(spdif_config);
 	return &i2s_dac_config;
-}
-
-/****************************************************************************************
- * Get ethernet config structure 
- */
-const eth_config_t * config_eth_get( ){
-	char * config = config_alloc_get_str("eth_config", CONFIG_ETH_CONFIG, "rst=" STR(CONFIG_ETH_PHY_RST_IO) 
-#if defined(CONFIG_ETH_LAN8720)	
-										 ",model=lan8720"
-#elif defined(CONFIG_ETH_DM9051)									
-										 ",model=dm9051"
-#endif										 
-										 ",mdc=" STR(CONFIG_ETH_MDC_IO) ",mdio=" STR(CONFIG_ETH_MDIO_IO) 
-										 ",host=" STR(CONFIG_ETH_SPI_HOST) ",cs=" STR(CONFIG_ETH_SPI_CS_IO)
-										 ",mosi=" STR(CONFIG_ETH_SPI_MOSI_IO) ",miso=" STR(CONFIG_ETH_SPI_MISO_IO) 
-										 ",intr=" STR(CONFIG_ETH_SPI_INTR_IO)
-										 ",clk=" STR(CONFIG_ETH_SPI_CLK_IO) ",speed=" STR(CONFIG_ETH_SPI_SPEED) );
-	static EXT_RAM_ATTR eth_config_t eth_config;
-	ESP_LOGD(TAG, "Ethernet config string %s", config);	
-	memcpy(&eth_config, config_get_eth_from_str(config), sizeof(eth_config));
-	free(config);
-	return &eth_config;
 }
 
 /****************************************************************************************
