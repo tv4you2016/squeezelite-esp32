@@ -138,7 +138,7 @@ sda=<gpio>,scl=<gpio>[,port=0|1][,speed=<speed>]
 ```
 <strong>Please note that you can not use the same GPIO or port as the DAC</strong>
 ### SPI
-The esp32 has 4 SPI sub-systems, one is unaccessible so numbering is 0..2 and SPI0 is reserved for Flash/PSRAM. The NVS parameter "spi_config" set the spi's gpio used for generic purpose (e.g. display). Leave it blank to disable SPI usage. The DC parameter is needed for displays. Syntax is
+The esp32 has 4 SPI sub-systems but SPI0, SPI1 and SPI3 are reserved for internal use and Flash/PSRAM, so only SPI2 is available. The NVS parameter "spi_config" set the spi's gpio used for user purpose (e.g. display, ethernet, GPIO expander). Leave it blank to disable SPI usage. The DC parameter is needed for displays. Syntax is
 ```
 data|mosi=<gpio>,clk=<gpio>[,dc=<gpio>][,host=1][,miso=<gpio>]
 ``` 
@@ -188,7 +188,7 @@ GPIO  ----210ohm-----------||---- coax S/PDIF signal out
 Ground -------------------------- coax signal ground
 ```
 ### Display
-The NVS parameter "display_config" sets the parameters for an optional display. Syntax is
+The NVS parameter "display_config" sets the parameters for an optional display. It can be I2C (see [here](#i2c) for shared bus) or SPI (see [here](#spi) for shared bus) Syntax is
 ```
 I2C,width=<pixels>,height=<pixels>[address=<i2c_address>][,reset=<gpio>][,HFlip][,VFlip][driver=SSD1306|SSD1326[:1|4]|SSD1327|SH1106]
 SPI,width=<pixels>,height=<pixels>,cs=<gpio>[,back=<gpio>][,reset=<gpio>][,speed=<speed>][,HFlip][,VFlip][driver=SSD1306|SSD1322|SSD1326[:1|4]|SSD1327|SH1106|SSD1675|ST7735[:x=<offset>][:y=<offset>]|ST7789|ILI9341[:16|18][,rotate]]
@@ -198,7 +198,7 @@ SPI,width=<pixels>,height=<pixels>,cs=<gpio>[,back=<gpio>][,reset=<gpio>][,speed
 - VFlip and HFlip are optional can be used to change display orientation
 - rotate: for non-square *drivers*, move to portrait mode. Note that *width* and *height* must be inverted then
 - Default speed is 8000000 (8MHz) but SPI can work up to 26MHz or even 40MHz
-- SH1106 is 128x64 monochrome I2C/SPI [here]((https://www.waveshare.com/wiki/1.3inch_OLED_HAT))
+- SH1106 is 128x64 monochrome I2C/SPI [here](https://www.waveshare.com/wiki/1.3inch_OLED_HAT)
 - SSD1306 is 128x32 monochrome I2C/SPI [here](https://www.buydisplay.com/i2c-blue-0-91-inch-oled-display-module-128x32-arduino-raspberry-pi)
 - SSD1322 is 256x64 grayscale 16-levels SPI in multiple sizes [here](https://www.buydisplay.com/oled-display/oled-display-module?resolution=159) - it is very nice
 - SSD1326 is 256x32 monochrome or grayscale 16-levels SPI [here](https://www.aliexpress.com/item/32833603664.html?spm=a2g0o.productlist.0.0.2d19776cyQvsBi&algo_pvid=c7a3db92-e019-4095-8a28-dfdf0a087f98&algo_expid=c7a3db92-e019-4095-8a28-dfdf0a087f98-1&btsid=0ab6f81e15955375483301352e4208&ws_ab_test=searchweb0_0,searchweb201602_,searchweb201603_)
@@ -216,9 +216,7 @@ The NVS parameter "metadata_config" sets how metadata is displayed for AirPlay a
 [format=<display_content>][,speed=<speed>][,pause=<pause>]
 ```
 - 'speed' is the scrolling speed in ms (default is 33ms)
-
 - 'pause' is the pause time between scrolls in ms (default is 3600ms)
-
 - 'format' can contain free text and any of the 3 keywords %artist%, %album%, %title%. Using that format string, the keywords are replaced by their value to build the string to be displayed. Note that the plain text following a keyword that happens to be empty during playback of a track will be removed. For example, if you have set format=%artist% - %title% and there is no artist in the metadata then only <title> will be displayed not " - <title>".
 
 ### Infrared
@@ -252,7 +250,7 @@ You can define the defaults for jack, spkfault leds at compile time but nvs para
 **Note that gpio 36 and 39 are input only and cannot use interrupt. When set to jack or speaker fault, a 100ms polling checks their value but that's expensive**
 	
 ### GPIO expanders
-It is possible to add GPIO expanders using I2C or SPI bus. They should mainly be used for buttons but they can support generic-purpose outputs as well. These additional GPIOs can be numbered starting from an arbitrary value (40 and above as esp32 has GPIO 0..39). Then these new "virtual" GPIOs from (e.g) 100 to 115 can be used in button configuration, set_GPIO or other config settings.
+It is possible to add GPIO expanders using I2C or SPI bus. They should mainly be used for buttons but they can support generic-purpose outputs as well. These additional GPIOs can be numbered starting from an arbitrary value (40 and above as esp32 has GPIO 0..39). Then these new "virtual" GPIOs from (e.g) 100 to 115 can be used in [button](#Buttons) configuration, [set_GPIO](#set-gpio) or other config settings.
 
 Each expander can support up to 32 GPIO. To use an expander for buttons, an interrupt must be provided, polling mode is not acceptable. An expander w/o interruption can still be configured, but only output will be usable. Note that the same interrupt can be shared accross expanders, as long as they are using open drain or open collectors (which they probably all do)
 
@@ -269,7 +267,7 @@ model=<model>,addr=<addr>,[,port=system|dac][,base=<n>|100][,count=<n>|16][,intr
 - count: number of GPIO of expander (default 16 - might be obsolted if model if sufficient to decide)
 - intr: real GPIO to use as interrupt.
 	
-Note that PWM ("led_brightness" below) is not supported for expanded GPIOs and they cannot be used for high speed or precise timing signals like CS, D/C, Reset and Ready. Buttons, rotary encoder, amplifier control and power are supported. Depending on the actual chipset, pullup or pulldown might be supported so you might have to add external resistors (only MCP23x17 does pullup). The pca8575 is not a great chip, it generate a fair bit of spurious interrupts when used for GPIO out.
+Note that PWM ("led_brightness" below) is not supported for expanded GPIOs and they cannot be used for high speed or precise timing signals like CS, D/C, Reset and Ready. Buttons, rotary encoder, amplifier control and power are supported. Depending on the actual chipset, pullup or pulldown might be supported so you might have to add external resistors (only MCP23x17 does pullup). The pca8575 is not a great chip, it generate a fair bit of spurious interrupts when used for GPIO out. When using a SPI expander, the bus must be configured using shared [SPI](#SPI) bus
 ### LED 
 See §**set_GPIO** for how to set the green and red LEDs. In addition, their brightness can be controlled using the "led_brigthness" parameter. The syntax is
 ```
@@ -421,7 +419,7 @@ Connecting a reset pin for the LAN8720 is optional but recommended to avoid that
 	
 The APLL of the esp32 is required for the audio codec, so we **need** a LAN8720 that provides a 50MHz clock. That clock **must** be connected to GPIO0, there is no alternative. This means that if your DAC requires an MCLK, then you are out of luck. It is not possible to have both to work together. There might be some workaround using CLK_OUT2 and GPIO3, but I don't have time for this.
 #### SPI (DM9051 or W5500)
-Ethernet over SPI is supported as well and requires less GPIOs but is obvsiously slower. The SPI bus must be shared with display (if any) because there is no SPI host left on the esp32. The "eth_config" parameter syntax becomes:
+Ethernet over SPI is supported as well and requires less GPIOs but is obvsiously slower. SPI is the shared bus set with [spi_config](#spi). The "eth_config" parameter syntax becomes:
 ```
 model=dm9051|w5500,cs=<gpio>,speed=<clk_in_Hz>,intr=<gpio>[,rst=<gpio>]
 ```
