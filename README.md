@@ -397,8 +397,8 @@ The benefit of the "raw" mode is that you can build a player which is as close a
 There is no good or bad option, it's your choice. Use the NVS parameter "lms_ctrls_raw" to change that option
 	
 **Note that gpio 36 and 39 are input only and cannot use interrupt. When using them for a button, a 100ms polling is started which is expensive. Long press is also likely to not work very well**
-### Ethernet (coming soon)
-Wired ethernet is supported by esp32 with various options but squeezelite is only supporting a Microchip LAN8720 with a RMII interface like [this](https://www.aliexpress.com/item/32858432526.html) or Davicom DM9051 over SPI like [that](https://www.amazon.com/dp/B08JLFWX9Z).
+### Ethernet (required unpublished version 4.3)
+Wired ethernet is supported by esp32 with various options but squeezelite is only supporting a Microchip LAN8720 with a RMII interface like [this](https://www.aliexpress.com/item/32858432526.html) or SPI-ethernet bridges like Davicom DM9051 [that](https://www.amazon.com/dp/B08JLFWX9Z) or W5500 like [this](https://www.aliexpress.com/item/32312441357.html).
 	
 #### RMII (LAN8720)	
 - RMII PHY wiring is fixed and can not be changed
@@ -420,23 +420,21 @@ Connecting a reset pin for the LAN8720 is optional but recommended to avoid that
 - Clock
 	
 The APLL of the esp32 is required for the audio codec, so we **need** a LAN8720 that provides a 50MHz clock. That clock **must** be connected to GPIO0, there is no alternative. This means that if your DAC requires an MCLK, then you are out of luck. It is not possible to have both to work together. There might be some workaround using CLK_OUT2 and GPIO3, but I don't have time for this.
-#### SPI (DM9051)
-Ethernet over SPI is supported as well and requires less GPIOs but is obvsiously slower. Another benefit is that the SPI bus can be shared with the display, but it's also possible to have a dedicated SPI interface. The esp32 has 4 SPI sub-systems, one is unaccessible so numbering is 0..2 and SPI0 is reserved for Flash/PSRAM. The "eth_config" parameter syntax becomes:
+#### SPI (DM9051 or W5500)
+Ethernet over SPI is supported as well and requires less GPIOs but is obvsiously slower. The SPI bus must be shared with display (if any) because there is no SPI host left on the esp32. The "eth_config" parameter syntax becomes:
 ```
-model=dm9051,cs=<gpio>,speed=<clk_in_Hz>,intr=<gpio>[,host=<-1|1|2>][,rst=<gpio>][,mosi=<gpio>,miso=<gpio>,clk=<gpio>]
+model=dm9051|w5500,cs=<gpio>,speed=<clk_in_Hz>,intr=<gpio>[,rst=<gpio>]
 ```
-- To use the system SPI, shared with display (see spi_config) "host" must be set to -1. Any other value will reserve the SPI interface (careful of conflict with spi_config). The default "host" is 2 to avoid conflicting wiht default "spi_config" settings.
-- When not using system SPI, "mosi" for data out, "miso" for data in and "clk" **must** be set
-- The esp32 has a special I/O multiplexer for faster speed (up to 80 MHz) but that requires using specific GPIOs, which depends on SPI bus (See [here](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/spi_master.html) for more details)
+- The reset pin is optional but recommended
+- The esp32 has a special I/O multiplexer for faster speed (up to 80 MHz) but that requires using specific GPIOs, which depends on SPI bus (See [here](https://docs.espressif.com/projects/esp-idf/en/latest/esp32/api-reference/peripherals/spi_master.html) for more details). Note that currently only SPI2 is available.
 
-| Pin Name | SPI2 | SPI3 |
+| Pin Name | SPI1 | SPI2 |
 | -------- | ---- | ---- |		
-| CS0*     |  15  |  5   |
+| CS       |  15  |  5   |
 | SCLK	   |  14  |  18  |
 | MISO	   |  12  |  19  |
 | MOSI	   |  13  |  23  |
 	
-** THIS IS NOT AVAILABLE YET, SO MORE TO COME ON HOW TO USE WIRED ETHERNET***
 ### Battery / ADC
 The NVS parameter "bat_config" sets the ADC1 channel used to measure battery/DC voltage. The "atten" value attenuates the input voltage to the ADC input (the read value maintains a 0-1V rage) where: 0=no attenuation(0..800mV), 1=2.5dB attenuation(0..1.1V), 2=6dB attenuation(0..1.35V), 3=11dB attenuation(0..2.6V). Scale is a float ratio applied to every sample of the 12 bits ADC. A measure is taken every 10s and an average is made every 5 minutes (not a sliding window). Syntax is
 ```
