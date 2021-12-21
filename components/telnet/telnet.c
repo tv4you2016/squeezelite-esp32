@@ -58,14 +58,14 @@ struct telnetUserData {
 };
 
 const static char TAG[] = "telnet";
-static int uart_fd=0;
+static int uart_fd;
 static RingbufHandle_t buf_handle;
 static size_t send_chunk = 512;
 static size_t log_buf_size = 4*1024;
 static bool bIsEnabled=false;
-static int partnerSocket=0;
+static int partnerSocket;
 static telnet_t *tnHandle;
-static bool 	bMirrorToUART=false;
+static bool bMirrorToUART;
 
 /************************************
  * Forward declarations
@@ -87,7 +87,6 @@ void init_telnet(){
 	}
 
 	// if wifi manager is bypassed, there will possibly be no wifi available
-	//
 	bMirrorToUART = (strcasestr("D",val)!=NULL);
 	if(!bMirrorToUART && bypass_wifi_manager){
 		// This isn't supposed to happen, as telnet won't start if wifi manager isn't
@@ -121,20 +120,17 @@ void init_telnet(){
 	}
 
 	ESP_LOGI(TAG, "***Redirecting log output to telnet");
-	const esp_vfs_t vfs = {
-			.flags = ESP_VFS_FLAG_DEFAULT,
-			.write = &stdout_write,
-			.open = &stdout_open,
-			.fstat = &stdout_fstat,
-		};
+	esp_vfs_t vfs = { };
+	vfs.flags = ESP_VFS_FLAG_DEFAULT;
+	vfs.write = &stdout_write;
+	vfs.open = &stdout_open;
+	vfs.fstat = &stdout_fstat;
 
-	if(bMirrorToUART){
-		uart_fd=open("/dev/uart/0", O_RDWR);
-	}
+	if (bMirrorToUART) uart_fd = open("/dev/uart/0", O_RDWR);
 
 	ESP_ERROR_CHECK(esp_vfs_register("/dev/pkspstdout", &vfs, NULL));
-	freopen("/dev/pkspstdout", "w", stdout);
-	freopen("/dev/pkspstdout", "w", stderr);
+	freopen("/dev/pkspstdout", "wb", stdout);
+	freopen("/dev/pkspstdout", "wb", stderr);
 
 	bIsEnabled=true;
 }
@@ -293,17 +289,14 @@ static void handle_telnet_conn() {
 
 // ******************* stdout/stderr Redirection to ringbuffer
 static ssize_t stdout_write(int fd, const void * data, size_t size) {
-	// #1 Write to ringbuffer
-	if (buf_handle == NULL) {
-		printf("%s() ABORT. file handle _log_remote_fp is NULL\n",
-				__FUNCTION__);
-	} else {
-		// flush the buffer if needed and send item
+	// flush the buffer and send item
+	if (buf_handle) {
 		process_logs(size, true);
 		xRingbufferSend(buf_handle, data, size, 0);
-
 	}
-	return bMirrorToUART ? write(uart_fd, data, size) : size;
+	
+	// mirror to uart if required
+	return (bMirrorToUART || !buf_handle) ? write(uart_fd, data, size) : size;
 }
 
 static int stdout_open(const char * path, int flags, int mode) {
