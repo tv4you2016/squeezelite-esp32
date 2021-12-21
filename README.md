@@ -138,7 +138,7 @@ sda=<gpio>,scl=<gpio>[,port=0|1][,speed=<speed>]
 ```
 <strong>Please note that you can not use the same GPIO or port as the DAC</strong>
 ### SPI
-The esp32 has 4 SPI sub-systems but SPI0, SPI1 and SPI3 are reserved for internal use and Flash/PSRAM, so only SPI2 is available. The NVS parameter "spi_config" set the spi's gpio used for user purpose (e.g. display, ethernet, GPIO expander). Leave it blank to disable SPI usage. The DC parameter is needed for displays. Syntax is
+The esp32 has 3 user-accessible SPI sub-systems but SPI0 and SPI2 are reserved for internal use and Flash/PSRAM, so only SPI1 is available. The NVS parameter "spi_config" set the spi's gpio used for user purpose (e.g. display, ethernet, GPIO expander). Leave it blank to disable SPI usage. The DC parameter is needed for displays. Syntax is
 ```
 data|mosi=<gpio>,clk=<gpio>[,dc=<gpio>][,host=1][,miso=<gpio>]
 ``` 
