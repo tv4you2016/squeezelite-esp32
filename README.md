@@ -420,7 +420,7 @@ Connecting a reset pin for the LAN8720 is optional but recommended to avoid that
 - Clock
 	
 The APLL of the esp32 is required for the audio codec, so we **need** a LAN8720 that provides a 50MHz clock. That clock **must** be connected to GPIO0, there is no alternative. This means that if your DAC requires an MCLK, then you are out of luck. It is not possible to have both to work together. There might be some workaround using CLK_OUT2 and GPIO3, but I don't have time for this.
-#### SPI (DM9051.W5500)
+#### SPI (DM9051 or W5500)
 Ethernet over SPI is supported as well and requires less GPIOs but is obvsiously slower. The SPI bus must be shared with display (if any) because there is no SPI host left on the esp32. The "eth_config" parameter syntax becomes:
 ```
 model=dm9051|w5500,cs=<gpio>,speed=<clk_in_Hz>,intr=<gpio>[,rst=<gpio>]
