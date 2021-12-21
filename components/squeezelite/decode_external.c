@@ -321,11 +321,8 @@ static bool raop_sink_cmd_handler(raop_event_t event, va_list args)
 #endif
 
 /****************************************************************************************
-
-/****************************************************************************************
  * We provide the generic codec register option
  */
-
 #if defined(ESP_PLATFORM) && defined(CONFIG_BT_SINK)
 void bt_delay_start(TimerHandle_t xTimer) {
 	xTimerDelete(xTimer, portMAX_DELAY);
