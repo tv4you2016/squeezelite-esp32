@@ -138,6 +138,7 @@ static bool bt_sink_cmd_handler(bt_sink_cmd_t cmd, va_list args)
 	case BT_SINK_AUDIO_STOPPED:	
 		if (output.external == DECODE_BT) {
 			if (output.state > OUTPUT_STOPPED) output.state = OUTPUT_STOPPED;
+			output.external = 0;
 			output.stop_time = gettime_ms();
 			LOG_INFO("BT sink stopped");
 		}	
@@ -282,6 +283,8 @@ static bool raop_sink_cmd_handler(raop_event_t event, va_list args)
 			output.next_sample_rate = output.current_sample_rate = RAOP_SAMPLE_RATE;
 			break;
 		case RAOP_STOP:
+			output.external = 0;
+			__attribute__ ((fallthrough));
 		case RAOP_FLUSH:
 			LOG_INFO("%s", event == RAOP_FLUSH ? "Flush" : "Stop");
 			_buf_flush(outputbuf);
