@@ -161,7 +161,6 @@ static bool raop_sink_start(raop_cmd_vcb_t cmd_cb, raop_data_cb_t data_cb) {
     const char *hostname = NULL;
 	char sink_name[64-6] = CONFIG_AIRPLAY_NAME;
 	tcpip_adapter_ip_info_t ipInfo = { }; 
-	struct in_addr host;
 	tcpip_adapter_if_t ifs[] = { TCPIP_ADAPTER_IF_ETH, TCPIP_ADAPTER_IF_STA, TCPIP_ADAPTER_IF_AP };
    	
 	// get various IP info
@@ -175,8 +174,6 @@ static bool raop_sink_start(raop_cmd_vcb_t cmd_cb, raop_data_cb_t data_cb) {
 		LOG_INFO( "no hostname/IP found, can't start AirPlay");
 		return false;
 	}
-	
-	host.s_addr = ipInfo.ip.addr;
 
     // initialize mDNS
     ESP_ERROR_CHECK( mdns_init() );
@@ -189,13 +186,13 @@ static bool raop_sink_start(raop_cmd_vcb_t cmd_cb, raop_data_cb_t data_cb) {
     	free(sink_name_buffer);
     }
 
-	LOG_INFO( "mdns hostname for ip %s set to: [%s] with servicename %s", inet_ntoa(host), hostname, sink_name);
+	LOG_INFO( "mdns hostname for ip %s set to: [%s] with servicename %s", inet_ntoa(ipInfo.ip.addr), hostname, sink_name);
 
     // create RAOP instance, latency is set by controller
 	uint8_t mac[6];	
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
 	cmd_handler_chain = cmd_cb;
-	raop = raop_create(host, sink_name, mac, 0, cmd_handler, data_cb);
+	raop = raop_create(ipInfo.ip.addr, sink_name, mac, 0, cmd_handler, data_cb);
 	
 	return true;
 }
