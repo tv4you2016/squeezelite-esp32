@@ -28,7 +28,6 @@
 #include "driver/gpio.h"
 #include "driver/spi_common_internal.h"
 #include "esp32/rom/efuse.h"
-#include "adac.h"
 #include "trace.h"
 #include "monitor.h"
 #include "messaging.h"
