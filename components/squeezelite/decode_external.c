@@ -326,72 +326,35 @@ static bool raop_sink_cmd_handler(raop_event_t event, va_list args)
 /****************************************************************************************
  * We provide the generic codec register option
  */
-#if defined(ESP_PLATFORM) && defined(CONFIG_BT_SINK)
-void bt_delay_start(TimerHandle_t xTimer) {
-	xTimerDelete(xTimer, portMAX_DELAY);
-	bt_sink_init(bt_sink_cmd_handler, sink_data_handler);
-	LOG_INFO("Initializing BT sink");
-}	
-
-void bt_delay_stop(TimerHandle_t xTimer) {
-	xTimerDelete(xTimer, portMAX_DELAY);
-	bt_sink_deinit();
-	LOG_INFO("Stopping BT sink");
-}	
-#endif
-
 void register_external(void) {
 	char *p;
 
 #if CONFIG_BT_SINK
 	if ((p = config_alloc_get(NVS_TYPE_STR, "enable_bt_sink")) != NULL) {
-		enable_bt_sink = strcmp(p,"1") == 0 || strcasecmp(p,"y") == 0;
+		enable_bt_sink = !strcmp(p,"1") || !strcasecmp(p,"y");
 		free(p);
+		if (!strcasestr(output.device, "BT") && enable_bt_sink) {
+			bt_sink_init(bt_sink_cmd_handler, sink_data_handler);
+		}	
 	}
 #endif	
 
 #if CONFIG_AIRPLAY_SINK
 	if ((p = config_alloc_get(NVS_TYPE_STR, "enable_airplay")) != NULL) {
-		enable_airplay = strcmp(p,"1") == 0 || strcasecmp(p,"y") == 0;
+		enable_airplay = !strcmp(p,"1") || !strcasecmp(p,"y");
 		free(p);
-	}
-#endif	
-	
-#if CONFIG_BT_SINK	
-	if (!strcasestr(output.device, "BT ") ) {
-		if(enable_bt_sink){
-#ifdef ESP_PLATFORM
-			// we need to delay the start because current task is in spiram
-			TimerHandle_t timer = xTimerCreate("delay", 1, pdFALSE, NULL, bt_delay_start);
-			xTimerStart(timer, portMAX_DELAY);
-#else
-			bt_sink_init(bt_sink_cmd_handler, sink_data_handler);
-#endif
+		if (enable_airplay){
+			raop_sink_init(raop_sink_cmd_handler, raop_sink_data_handler);
+			LOG_INFO("Initializing AirPlay sink");
 		}
-	} else {
-		LOG_WARN("Cannot be a BT sink and source");
-	}	
-#endif
-
-#if CONFIG_AIRPLAY_SINK
-	if (enable_airplay){
-		raop_sink_init(raop_sink_cmd_handler, raop_sink_data_handler);
-		LOG_INFO("Initializing AirPlay sink");
 	}
 #endif	
-	
 }
 
 void deregister_external(void) {
 #if CONFIG_BT_SINK
-	if (!strcasestr(output.device, "BT ") && enable_bt_sink) {
-#ifdef ESP_PLATFORM
-		// we need to delay the stop because current task is in spiram
-		TimerHandle_t timer = xTimerCreate("delay", 1, pdFALSE, NULL, bt_delay_stop);
-		xTimerStart(timer, portMAX_DELAY);
-#else
+	if (!strcasestr(output.device, "BT") && enable_bt_sink) {
 		bt_sink_deinit();
-#endif
 	}
 #endif
 
