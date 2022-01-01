@@ -142,7 +142,7 @@ The esp32 has 3 user-accessible SPI sub-systems but SPI0 and SPI2 are reserved f
 ```
 data|mosi=<gpio>,clk=<gpio>[,dc=<gpio>][,host=1][,miso=<gpio>]
 ``` 
-Default and only "host" is 1 as others are used already by flash and spiram. The "miso" parameter is only used when SPI bus is to be shared with other peripheral (e.g. ethernet, see below), otherwise it can be omitted. Note that "data" can also be named "mosi". 
+Default and only "host" is 1 as others are used already by flash and spiram. The optional "miso" (MasterInSlaveOut) parameter is only used when SPI bus is bi-directional and shared with other peripheral like ethernet, gpio expander. Note that "data" can also be named "mosi" (MasterOutSlaveIn). 
 ### DAC/I2S
 The NVS parameter "dac_config" set the gpio used for i2s communication with your DAC. You can define the defaults at compile time but nvs parameter takes precedence except for SqueezeAMP and A1S where these are forced at runtime. Syntax is
 ```
@@ -194,7 +194,7 @@ I2C,width=<pixels>,height=<pixels>[address=<i2c_address>][,reset=<gpio>][,HFlip]
 SPI,width=<pixels>,height=<pixels>,cs=<gpio>[,back=<gpio>][,reset=<gpio>][,speed=<speed>][,HFlip][,VFlip][driver=SSD1306|SSD1322|SSD1326[:1|4]|SSD1327|SH1106|SSD1675|ST7735[:x=<offset>][:y=<offset>]|ST7789|ILI9341[:16|18][,rotate]]
 ```
 - back: a LED backlight used by some older devices (ST7735). It is PWM controlled for brightness
-- reset: some display have a reset pin that is should normally be pulled up if unused
+- reset: some display have a reset pin that is should normally be pulled up if unused. Most displays require reset and will not initialize well otherwise.
 - VFlip and HFlip are optional can be used to change display orientation
 - rotate: for non-square *drivers*, move to portrait mode. Note that *width* and *height* must be inverted then
 - Default speed is 8000000 (8MHz) but SPI can work up to 26MHz or even 40MHz
