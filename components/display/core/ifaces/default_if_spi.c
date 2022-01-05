@@ -43,7 +43,7 @@ bool GDS_SPIAttachDevice( struct GDS_Device* Device, int Width, int Height, int 
 	if (CSPin >= 0) {
 		ESP_ERROR_CHECK_NONFATAL( gpio_set_direction( CSPin, GPIO_MODE_OUTPUT ), return false );
 		ESP_ERROR_CHECK_NONFATAL( gpio_set_level( CSPin, 0 ), return false );
-	}	
+	}
 	
     memset( &SPIDeviceConfig, 0, sizeof( spi_device_interface_config_t ) );
 

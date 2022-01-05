@@ -282,7 +282,7 @@ void output_init_i2s(log_level level, char *device, unsigned output_buf_size, ch
 		
 		res = i2s_driver_install(CONFIG_I2S_NUM, &i2s_config, 0, NULL);
 		res |= i2s_set_pin(CONFIG_I2S_NUM, &i2s_spdif_pin);
-		LOG_INFO("SPDIF using I2S bck:%u, ws:%u, do:%u", i2s_spdif_pin.bck_io_num, i2s_spdif_pin.ws_io_num, i2s_spdif_pin.data_out_num);
+		LOG_INFO("SPDIF using I2S bck:%d, ws:%d, do:%d", i2s_spdif_pin.bck_io_num, i2s_spdif_pin.ws_io_num, i2s_spdif_pin.data_out_num);
 	} else {
 		i2s_config.sample_rate = output.current_sample_rate;
 		i2s_config.bits_per_sample = BYTES_PER_FRAME * 8 / 2;
@@ -492,20 +492,7 @@ static void output_thread_i2s(void *arg) {
 		_output_frames( iframes );
 		// oframes must be a global updated by the write callback
 		output.frames_in_process = oframes;
-
-/*		
-		{	
-			ISAMPLE_T *ptr = (ISAMPLE_T*) obuf;
-			for (int i = 0; i < oframes; i++) {
-				*ptr++ = 0;		// L				
-#if BYTES_PER_FRAME == 8		
-				*ptr++ = rand() >> 4;  // R
-#else 
-				*ptr++ = (rand() % 65536) >> 4;  // R
-#endif		
-			}
-		}	
-*/							
+						
 		SET_MIN_MAX_SIZED(oframes,rec,iframes);
 		SET_MIN_MAX_SIZED(_buf_used(outputbuf),o,outputbuf->size);
 		SET_MIN_MAX_SIZED(_buf_used(streambuf),s,streambuf->size);
