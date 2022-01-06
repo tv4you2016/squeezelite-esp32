@@ -409,6 +409,7 @@ Wired ethernet is supported by esp32 with various options but squeezelite is onl
 | GPIO25 | RX0         | EMAC_RXD0    |
 | GPIO26 | RX1         | EMAC_RXD1    |
 | GPIO27 | CRS_DV      | EMAC_RX_DRV  |
+| GPIO0  | REF_CLK     | 50MHz clock  |
 
 - SMI (Serial Management Interface) wiring is not fixed and you can change it either in the configuration or using "eth_config" parameter with the following syntax:
 ```
