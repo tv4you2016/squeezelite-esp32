@@ -20,6 +20,7 @@
 #include "gds_draw.h"
 #include "gds_text.h"
 #include "gds_font.h"
+#include "gds_image.h"
 
 static const char *TAG = "display";
 
@@ -30,6 +31,7 @@ static const char *TAG = "display";
 #define SCROLLABLE_SIZE			384
 #define HEADER_SIZE				64
 #define	DEFAULT_SLEEP			3600
+#define ARTWORK_BORDER			1
 
 static EXT_RAM_ATTR struct {
 	TaskHandle_t task;
@@ -47,6 +49,10 @@ static EXT_RAM_ATTR struct {
 		char string[8]; // H:MM:SS
 		bool visible;
 	} duration;
+	struct {
+		bool enable, fit;
+		int offset;
+	}  artwork;
 	TickType_t tick;
 } displayer;
 
@@ -147,6 +153,14 @@ void display_init(char *welcome) {
 		GDS_TextSetFontAuto(display, 2, GDS_FONT_LINE_2, -3);
 		
 		displayer.metadata_config = config_alloc_get(NVS_TYPE_STR, "metadata_config");
+		
+		// leave room for artwork is display is horizontal-style
+		if (strcasestr(displayer.metadata_config, "artwork")) {
+			displayer.artwork.enable = true;
+			displayer.artwork.fit = true;
+			if (height <= 64 && width > height * 2) displayer.artwork.offset = width - height - ARTWORK_BORDER;
+			PARSE_PARAM(displayer.metadata_config, "artwork", ':', displayer.artwork.fit);
+		}	
 	}
 	
 	free(config);
@@ -237,6 +251,19 @@ static void displayer_task(void *args) {
 		vTaskDelay(sleep / portTICK_PERIOD_MS);
 	}
 }	
+
+
+/****************************************************************************************
+ * 
+ */
+void displayer_artwork(uint8_t *data) {
+	if (!displayer.artwork.enable) return;
+	
+	int x = displayer.artwork.offset ? displayer.artwork.offset + ARTWORK_BORDER : 0;
+	int y = x ? 0 : 32;
+	GDS_ClearWindow(display, x, y, -1, -1, GDS_COLOR_BLACK);
+	if (data) GDS_DrawJPEG(display, data, x, y, GDS_IMAGE_CENTER | (displayer.artwork.fit ? GDS_IMAGE_FIT : 0));
+}
 
 /****************************************************************************************
  * 
@@ -378,6 +405,7 @@ void displayer_control(enum displayer_cmd_e cmd, ...) {
 	switch(cmd) {
 	case DISPLAYER_ACTIVATE: {	
 		char *header = va_arg(args, char*);
+		bool artwork = va_arg(args, int);
 		strncpy(displayer.header, header, HEADER_SIZE);
 		displayer.header[HEADER_SIZE] = '\0';
 		displayer.state = DISPLAYER_ACTIVE;
@@ -388,6 +416,7 @@ void displayer_control(enum displayer_cmd_e cmd, ...) {
 		displayer.duration.visible = false;
 		displayer.offset = displayer.boundary = 0;
 		display_bus(&displayer, DISPLAY_BUS_TAKE);
+		if (artwork) GDS_SetTextWidth(display, displayer.artwork.offset);
 		vTaskResume(displayer.task);
 		break;
 	}	
@@ -398,6 +427,7 @@ void displayer_control(enum displayer_cmd_e cmd, ...) {
 		break;		
 	case DISPLAYER_SHUTDOWN:
 		// let the task self-suspend (we might be doing i2c_write)
+		GDS_SetTextWidth(display, 0);
 		displayer.state = DISPLAYER_DOWN;
 		display_bus(&displayer, DISPLAY_BUS_GIVE);
 		break;

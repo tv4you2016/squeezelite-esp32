@@ -95,7 +95,7 @@ struct GDS_Device {
 		const struct GDS_FontDef* Font;
 	} Lines[MAX_LINES];
 	
-	uint16_t Width;
+	uint16_t Width, TextWidth;
     uint16_t Height;
 	uint8_t Depth, Mode;
 	
