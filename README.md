@@ -213,11 +213,12 @@ You can tweak how the vu-meter and spectrum analyzer are displayed, as well as s
 
 The NVS parameter "metadata_config" sets how metadata is displayed for AirPlay and Bluetooth. Syntax is
 ```
-[format=<display_content>][,speed=<speed>][,pause=<pause>]
+[format=<display_content>][,speed=<speed>][,pause=<pause>][,artwork[:0|1]]
 ```
 - 'speed' is the scrolling speed in ms (default is 33ms)
 - 'pause' is the pause time between scrolls in ms (default is 3600ms)
 - 'format' can contain free text and any of the 3 keywords %artist%, %album%, %title%. Using that format string, the keywords are replaced by their value to build the string to be displayed. Note that the plain text following a keyword that happens to be empty during playback of a track will be removed. For example, if you have set format=%artist% - %title% and there is no artist in the metadata then only <title> will be displayed not " - <title>".
+- 'artwork' enables coverart display, if available (does not work for Bluetooth). The optional parameter indicates if the artwork should be resized (1) to fit the available space. Note that the built-in resizer can only do 2,4 and 8 downsizing, so fit is not optimal. The artwork will be placed at the right of the display for landscape displays and underneath the two information lines for others (there is no user option to tweak that).
 
 ### Infrared
 You can use any IR receiver compatible with NEC protocol (38KHz). Vcc, GND and output are the only pins that need to be connected, no pullup, no filtering capacitor, it's a straight connection.
