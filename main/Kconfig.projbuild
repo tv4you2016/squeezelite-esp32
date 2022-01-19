@@ -114,12 +114,16 @@ menu "Squeezelite-ESP32"
 		config ETH_CONFIG
 			string
 			default ""
+		# AGGREGATES - end							
 		config DAC_CONTROLSET
 			string
 			default "{ \"init\": [ {\"reg\":41, \"val\":128}, {\"reg\":18, \"val\":255} ], \"poweron\": [ {\"reg\":18, \"val\":64, \"mode\":\"or\"} ], \"poweroff\": [ {\"reg\":18, \"val\":191, \"mode\":\"and\"} ] }" if TWATCH2020
 			default "{\"init\":[ {\"reg\":0,\"val\":128}, {\"reg\":0,\"val\":0}, {\"reg\":25,\"val\":4}, {\"reg\":1,\"val\":80}, {\"reg\":2,\"val\":0},	{\"reg\":8,\"val\":0}, {\"reg\":4,\"val\":192},	{\"reg\":0,\"val\":18}, {\"reg\":1,\"val\":0}, {\"reg\":23,\"val\":24}, {\"reg\":24,\"val\":2}, {\"reg\":38,\"val\":9}, {\"reg\":39,\"val\":144}, {\"reg\":42,\"val\":144}, {\"reg\":43,\"val\":128}, {\"reg\":45,\"val\":128}, {\"reg\":27,\"val\":0}, {\"reg\":26,\"val\":0}, {\"reg\":2,\"val\":240}, {\"reg\":2,\"val\":0},	{\"reg\":29,\"val\":28}, {\"reg\":4,\"val\":48}, {\"reg\":25,\"val\":0} ]}" if MUSE
 			default ""		
-		# AGGREGATES - end				
+		config AUDIO_CONTROLS
+			string
+			default "[{\"gpio\":32, \"pull\":true, \"debounce\":10, \"normal\":{\"pressed\":\"ACTRLS_VOLDOWN\"}}, {\"gpio\":19, \"pull\":true, \"debounce\":40, \"normal\":{\"pressed\":\"ACTRLS_VOLUP\"}}, {\"gpio\":12, \"pull\":true, \"debounce\":40, \"longpress\":1000, \"normal\":{\"pressed\":\"ACTRLS_TOGGLE\"},\"longpress\":{\"pressed\":\"ACTRLS_POWER\"}}]" if MUSE
+			default ""
 	endmenu
 
 	menu "Ethernet Options"
@@ -286,29 +290,37 @@ menu "Squeezelite-ESP32"
 		config BT_NAME
 			depends on BT_SINK
 			string "Name of Bluetooth A2DP device"
-		        default "ESP32-BT"
+		    default "ESP32-BT"
 		    help
 				This is the name of the bluetooth speaker that will be broadcasted			
 		config BT_SINK_PIN		
 			depends on BT_SINK		
 			int "Bluetooth PIN code"
-		        default 1234
+		    default 1234
 		config AIRPLAY_SINK
 			bool "AirPlay receiver"
 			default y
 		config AIRPLAY_NAME
 			depends on AIRPLAY_SINK
 			string "Name of AirPlay device"
-				default "ESP32-AirPlay"
+			default "ESP32-AirPlay"
 		    help
 				This is the name of the AirPlay speaker that will be broadcasted		
 		config AIRPLAY_PORT
 			depends on AIRPLAY_SINK
 			string "AirPlay listening port"
-				default 5000
+			default 5000
 		    help
 				AirPlay service listening port
 	endmenu	
+	
+	menu "Controls"
+		depends on !MUSE
+		config AUDIO_CONTROLS
+			string "Audio buttons set (JSON)"
+			help
+				Configuration of buttons (see README for syntax)
+	endmenu				
 
 	menu "Display Screen"
 		depends on !TWATCH2020
@@ -355,6 +367,7 @@ menu "Squeezelite-ESP32"
 				Set parameters of GPIO extender
 				model=<model>[,addr=<addr>][,base=<100..N>][,count=<0..32>][,intr=<gpio>][,port=dac|system]				
 	endmenu
+	
 	menu "LED configuration"
 		visible if !SQUEEZEAMP && !TWATCH2020 && !MUSE
 		config LED_GREEN_GPIO
@@ -381,6 +394,7 @@ menu "Squeezelite-ESP32"
 			default 0 if SQUEEZEAMP
 			default 1
 	endmenu
+	
     menu "Audio JACK"	
 		visible if !SQUEEZEAMP && !TWATCH2020 && !MUSE
 		config JACK_GPIO		
@@ -394,6 +408,7 @@ menu "Squeezelite-ESP32"
 			int "Level when inserted (0/1)"
 			default 0
 	endmenu	
+	
 	menu "Amplifier"	
 		visible if !SQUEEZEAMP && !TWATCH2020 && !MUSE
 		config AMP_GPIO		
@@ -407,6 +422,7 @@ menu "Squeezelite-ESP32"
 			int "Active level(0/1)"
 			default 1
 	endmenu	
+	
 	menu "Speaker Fault"	
 		visible if !SQUEEZEAMP && !TWATCH2020 && !MUSE
 		config SPKFAULT_GPIO		
@@ -420,6 +436,7 @@ menu "Squeezelite-ESP32"
 			int "Level when fault (0/1)"
 			default 0
 	endmenu	
+	
 	menu "Battery measure"	
 		visible if !SQUEEZEAMP && !TWATCH2020
 		config BAT_CHANNEL	

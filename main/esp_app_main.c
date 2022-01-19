@@ -68,6 +68,7 @@ extern const uint8_t server_cert_pem_end[] asm("_binary_github_pem_end");
 // as an exception _init function don't need include
 extern void services_init(void);
 extern void	display_init(char *welcome);
+extern void target_init(void);
 const char * str_or_unknown(const char * str) { return (str?str:unknown_string_placeholder); }
 const char * str_or_null(const char * str) { return (str?str:null_string_placeholder); }
 bool is_recovery_running;
@@ -473,6 +474,8 @@ void app_main()
 
 	ESP_LOGI(TAG,"Initializing display");
 	display_init("SqueezeESP32");
+	
+	target_init();
 
 	if(is_recovery_running && display){
 		GDS_ClearExt(display, true);
@@ -501,7 +504,7 @@ void app_main()
 
 	if(!is_recovery_running){
 		ESP_LOGD(TAG,"Getting audio control mapping ");
-		char *actrls_config = config_alloc_get_default(NVS_TYPE_STR, "actrls_config", NULL, 0);
+		char *actrls_config = config_alloc_get_default(NVS_TYPE_STR, "actrls_config", CONFIG_AUDIO_CONTROLS, 0);
 		if (actrls_init(actrls_config) == ESP_OK) {
 			ESP_LOGD(TAG,"Initializing audio control buttons type %s", actrls_config);	
 		} else {
