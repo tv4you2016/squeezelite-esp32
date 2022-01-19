@@ -37,6 +37,9 @@ CONFIG_PROJECT_NAME="SqueezeAmp"
 CONFIG_FW_PLATFORM_NAME="SqueezeAmp"
 CONFIG_RELEASE_API="https://api.github.com/repos/sle118/squeezelite-esp32/releases"
 CONFIG_SQUEEZELITE_ESP32_RELEASE_URL "https://github.com/sle118/squeezelite-esp32/releases"
+CONFIG_AUDIO_CONTROLS=""
+CONFIG_AMP_GPIO=-1
+
 #
 # SDK tool configuration
 #
