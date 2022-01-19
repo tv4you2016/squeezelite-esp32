@@ -38,6 +38,9 @@ menu "Squeezelite-ESP32"
 	config MUTE_GPIO_LEVEL
 		int 
 		default 0
+	config WELL_KNOWN
+		bool
+		default n
 	menu "Target"
 		choice OUTPUT_TYPE
 			prompt "Main system"
@@ -51,17 +54,20 @@ menu "Squeezelite-ESP32"
 				select I2C_LOCKED
 				select LED_LOCKED
 				select SPKFAULT_LOCKED
-			config BASIC_I2C_BT
-				bool "Generic I2S & Bluetooth"				
-			config TWATCH2020	
-				bool "T-WATCH2020 by LilyGo"				
-				select I2C_LOCKED		
+				select WELL_KNOWN
 			config MUSE
 				bool "Muse"
 				select JACK_LOCKED
 				select BAT_LOCKED
 				select I2C_LOCKED
-				select AMP_LOCKED
+				select AMP_LOCKED				
+				select WELL_KNOWN
+			config BASIC_I2C_BT
+				bool "Generic I2S & Bluetooth"				
+			config TWATCH2020	
+				bool "T-WATCH2020 by LilyGo"				
+				select I2C_LOCKED		
+				select WELL_KNOWN
 		endchoice	
 		config RELEASE_API
         	string "Software update URL"
@@ -124,62 +130,12 @@ menu "Squeezelite-ESP32"
 			string
 			default "[{\"gpio\":32, \"pull\":true, \"debounce\":10, \"normal\":{\"pressed\":\"ACTRLS_VOLDOWN\"}}, {\"gpio\":19, \"pull\":true, \"debounce\":40, \"normal\":{\"pressed\":\"ACTRLS_VOLUP\"}}, {\"gpio\":12, \"pull\":true, \"debounce\":40, \"longpress\":1000, \"normal\":{\"pressed\":\"ACTRLS_TOGGLE\"},\"longpress\":{\"pressed\":\"ACTRLS_POWER\"}}]" if MUSE
 			default ""
+		config BAT_CONFIG
+			default "channel=7,scale=20.24,atten=0" if SQUEEZEAMP
+			default "channel=5,scale=1,atten=3,cells=1" if MUSE
+			default ""
 	endmenu
 
-	menu "Ethernet Options"
-		visible if BASIC_I2C_BT && (ETH_USE_ESP32_EMAC || ETH_USE_SPI_ETHERNET)
-		choice 
-			prompt "Ethernet Chipset"
-			default ETH_NODRIVER
-			config ETH_NODRIVER
-				bool "Defined in NVS"			   
-			config ETH_LAN8720
-				bool "Microchip LAN8720 (RMII)"
-			config ETH_DM9051
-				bool "Davicom 9051 (SPI)"				
-		endchoice	
-		config ETH_PHY_RST_IO
-			int "PHY Reset GPIO number" if !ETH_NODRIVER
-			default -1
-			help
-				Set the GPIO number used to reset PHY chip.
-				Set to -1 to disable PHY chip hardware reset.		
-		config ETH_MDC_IO
-			int "SMI MDC GPIO number" if ETH_LAN8720
-			default -1
-			help
-				Set the GPIO number used by SMI MDC.		
-		config ETH_MDIO_IO
-			int "SMI MDIO GPIO number" if ETH_LAN8720
-			default -1
-			help
-				Set the GPIO number used by SMI MDIO.		
-		config ETH_SPI_HOST
-			int "SPI host number (-1,1 or 2)" if ETH_DM9051
-			default -1
-			help
-				Set to -1 to use system's SPI config (see Various I/O)
-				Set to 2 or 3 to use a dedicated bus 
-		config ETH_SPI_INTR_IO
-			int "interrupt" if ETH_DM9051
-			default -1													
-		config ETH_SPI_CS_IO
-			int "Chip Select" if ETH_DM9051
-			default -1								
-		config ETH_SPI_CLK_IO
-			int "SPI clock" if ETH_SPI_HOST != -1 && ETH_DM9051
-			default -1
-		config ETH_SPI_MOSI_IO
-			int "Data Out" if ETH_SPI_HOST != -1 && ETH_DM9051
-			default -1				
-		config ETH_SPI_MISO_IO
-			int "Data In"  if ETH_SPI_HOST != -1 && ETH_DM9051
-			default -1
-		config ETH_SPI_SPEED
-			int "SPI speed (Hz)" if ETH_SPI_HOST != -1 && ETH_DM9051
-			default 20000000
-	endmenu
-	
 	menu "Audio settings"
 		menu "DAC settings" 
 			visible if BASIC_I2C_BT
@@ -369,7 +325,7 @@ menu "Squeezelite-ESP32"
 	endmenu
 	
 	menu "LED configuration"
-		visible if !SQUEEZEAMP && !TWATCH2020 && !MUSE
+		visible if !WELL_KNOWN
 		config LED_GREEN_GPIO
 			int "Green led GPIO"
 			default 12 if SQUEEZEAMP	
@@ -396,7 +352,7 @@ menu "Squeezelite-ESP32"
 	endmenu
 	
     menu "Audio JACK"	
-		visible if !SQUEEZEAMP && !TWATCH2020 && !MUSE
+		visible if !WELL_KNOWN
 		config JACK_GPIO		
 			int "Jack insertion GPIO"
 			default 34 if SQUEEZEAMP || MUSE
@@ -410,7 +366,7 @@ menu "Squeezelite-ESP32"
 	endmenu	
 	
 	menu "Amplifier"	
-		visible if !SQUEEZEAMP && !TWATCH2020 && !MUSE
+		visible if !WELL_KNOWN
 		config AMP_GPIO		
 			int "Amplifier GPIO"
 			default 21 if MUSE
@@ -424,7 +380,7 @@ menu "Squeezelite-ESP32"
 	endmenu	
 	
 	menu "Speaker Fault"	
-		visible if !SQUEEZEAMP && !TWATCH2020 && !MUSE
+		visible if !WELL_KNOWN
 		config SPKFAULT_GPIO		
 			int "Speaker fault GPIO"
 			default 2 if SQUEEZEAMP
@@ -437,21 +393,13 @@ menu "Squeezelite-ESP32"
 			default 0
 	endmenu	
 	
-	menu "Battery measure"	
-		visible if !SQUEEZEAMP && !TWATCH2020
-		config BAT_CHANNEL	
-			int "Set channel (0..7)"
-			default 7 if SQUEEZEAMP
-			default -1 
+	menu "Battery measure"
+		visible if !WELL_KNOWN
+		config BAT_CONFIG
+			string "Battery acquisitiong configuration"
 			help
-				Read a value every 10s on ADC1 on set Channel
-		config BAT_SCALE	
-			string "Set scaling factor"
-			depends on BAT_CHANNEL != -1
-			default "20.24" if SQUEEZEAMP
-			default "" 
-			help
-				Set the scaling factor for this 12 bits ADC
+				Sets parameters for battery voltage measure
+				channel=<0..7>,scale=<ratio_to_4096>,atten=<adc_atten>,cells=<1..3>
 	endmenu	
 	
 endmenu
