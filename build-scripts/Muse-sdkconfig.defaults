@@ -6,39 +6,40 @@ CONFIG_IDF_TARGET_ESP32=y
 CONFIG_IDF_TARGET="esp32"
 CONFIG_IDF_FIRMWARE_CHIP_ID=0x0000
 
-# SqueezeAMP defaults
-CONFIG_SQUEEZEAMP=y
+# Muse defaults
+CONFIG_MUSE=y
+CONFIG_AMP_LOCKED=y
 CONFIG_JACK_LOCKED=y
 CONFIG_BAT_LOCKED=y
 CONFIG_I2C_LOCKED=y
-CONFIG_LED_LOCKED=y
 CONFIG_WELL_KNOWN=y
 CONFIG_DISPLAY_CONFIG=""
 CONFIG_I2C_CONFIG=""
-CONFIG_SPI_CONFIG=""
+CONFIG_SPI_CONFIG="mosi=15,miso=2,clk=14"
 CONFIG_SET_GPIO=""
 CONFIG_GPIO_EXP_CONFIG=""
 CONFIG_ROTARY_ENCODER=""
-CONFIG_LED_GREEN_GPIO=12
+CONFIG_LED_GREEN_GPIO=22
 CONFIG_LED_GREEN_GPIO_LEVEL=0
-CONFIG_LED_RED_GPIO=13
-CONFIG_LED_RED_GPIO_LEVEL=0
+CONFIG_LED_RED_GPIO=-1
 CONFIG_JACK_GPIO=34
 CONFIG_JACK_GPIO_LEVEL=0
-CONFIG_SPKFAULT_GPIO=2
-CONFIG_SPKFAULT_GPIO_LEVEL=0
-CONFIG_BAT_CONFIG="channel=7,scale=20.24,atten=0"
+CONFIG_SPKFAULT_GPIO=-1
+
+CONFIG_DAC_CONTROLSET="{\"init\":[ {\"reg\":0,\"val\":128}, {\"reg\":0,\"val\":0}, {\"reg\":25,\"val\":4}, {\"reg\":1,\"val\":80}, {\"reg\":2,\"val\":0},	{\"reg\":8,\"val\":0}, {\"reg\":4,\"val\":192},	{\"reg\":0,\"val\":18}, {\"reg\":1,\"val\":0}, {\"reg\":23,\"val\":24}, {\"reg\":24,\"val\":2}, {\"reg\":38,\"val\":9}, {\"reg\":39,\"val\":144}, {\"reg\":42,\"val\":144}, {\"reg\":43,\"val\":128}, {\"reg\":45,\"val\":128}, {\"reg\":27,\"val\":0}, {\"reg\":26,\"val\":0}, {\"reg\":2,\"val\":240}, {\"reg\":2,\"val\":0},	{\"reg\":29,\"val\":28}, {\"reg\":4,\"val\":48}, {\"reg\":25,\"val\":0} ]}"
+CONFIG_AUDIO_CONTROLS="[{\"gpio\":32, \"pull\":true, \"debounce\":10, \"normal\":{\"pressed\":\"ACTRLS_VOLDOWN\"}}, {\"gpio\":19, \"pull\":true, \"debounce\":40, \"normal\":{\"pressed\":\"ACTRLS_VOLUP\"}}, {\"gpio\":12, \"pull\":true, \"debounce\":40, \"longpress\":1000, \"normal\":{\"pressed\":\"ACTRLS_TOGGLE\"},\"longpress\":{\"pressed\":\"ACTRLS_POWER\"}}]"
+CONFIG_BAT_CONFIG="channel=5,scale=1,atten=3,cells=1"
 CONFIG_I2S_NUM=0
 CONFIG_SPDIF_NUM=0
-CONFIG_SPDIF_CONFIG="bck=33,ws=25,do=15"
-CONFIG_DAC_CONFIG="model=TAS57xx,bck=33,ws=25,do=32,sda=27,scl=26,mute=14:0"
+CONFIG_SPDIF_CONFIG=""
+CONFIG_DAC_CONFIG="model=I2S,bck=5,ws=25,do=26,di=35,i2c=16,sda=18,scl=23,mck"
 CONFIG_MUTE_GPIO_LEVEL=-1
-CONFIG_PROJECT_NAME="SqueezeAmp"
-CONFIG_FW_PLATFORM_NAME="SqueezeAmp"
+CONFIG_PROJECT_NAME="Muse"
+CONFIG_FW_PLATFORM_NAME="Muse"
 CONFIG_RELEASE_API="https://api.github.com/repos/sle118/squeezelite-esp32/releases"
 CONFIG_SQUEEZELITE_ESP32_RELEASE_URL "https://github.com/sle118/squeezelite-esp32/releases"
-CONFIG_AUDIO_CONTROLS=""
-CONFIG_AMP_GPIO=-1
+CONFIG_AMP_GPIO=21
+CONFIG_AMP_GPIO_LEVEL=1
 
 #
 # SDK tool configuration
@@ -200,8 +201,8 @@ CONFIG_BT_RESERVE_DRAM=0xdb5c
 CONFIG_ADC_DISABLE_DAC=y
 CONFIG_SPI_MASTER_IN_IRAM=y
 CONFIG_SPI_MASTER_ISR_IN_IRAM=y
-# CONFIG_SPI_SLAVE_IN_IRAM is not set
-# CONFIG_SPI_SLAVE_ISR_IN_IRAM is not set
+CONFIG_SPI_SLAVE_IN_IRAM=y
+CONFIG_SPI_SLAVE_ISR_IN_IRAM=y
 # CONFIG_EFUSE_CUSTOM_TABLE is not set
 # CONFIG_EFUSE_VIRTUAL is not set
 # CONFIG_EFUSE_CODE_SCHEME_COMPAT_NONE is not set
