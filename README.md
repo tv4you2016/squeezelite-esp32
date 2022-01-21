@@ -1,22 +1,24 @@
 ![Cross-Build](https://github.com/sle118/squeezelite-esp32/workflows/Cross-Build/badge.svg?branch=master-cmake)
+
 # Squeezelite-esp32
-## What is this
+
+## What is this?
 Squeezelite-esp32 is an audio software suite made to run on espressif's ESP32 wifi (b/g/n) and bluetooth chipset. It offers the following capabilities
 
 - Stream your local music and connect to all major on-line music providers (Spotify, Deezer, Tidal, Qobuz) using [Logitech Media Server - a.k.a LMS](https://forums.slimdevices.com/) and enjoy multi-room audio synchronization. LMS can be extended by numerous plugins and can be controlled using a Web browser or dedicated applications (iPhone, Android). It can also send audio to UPnP, Sonos, ChromeCast and AirPlay speakers/devices.
-- Stream from a Bluetooth device (iPhone, Android)
-- Stream from an AirPlay controller (iPhone, iTunes ...) and enjoy synchronization multiroom as well (although it's AirPlay 1 only)
+- Stream from a **Bluetooth** device (iPhone, Android)
+- Stream from an **AirPlay** controller (iPhone, iTunes ...) and enjoy synchronization multiroom as well (although it's AirPlay 1 only)
 - Stream from a Spotify controller
 
 Depending on the hardware connected to the ESP32, you can send audio to a local DAC, to SPDIF or to a Bluetooth speaker. The bare minimum required hardware is a WROVER module with 4MB of Flash and 4MB of PSRAM (https://www.espressif.com/en/products/modules/esp32). With that module standalone, just apply power and you can stream to a Bluetooth speaker. You can also send audio to most I2S DAC as well as to SPDIF receivers using just a cable or an optical transducer.
 
 But squeezelite-esp32 is highly extensible and you can add
 
-- Buttons and Rotary Encoder and map/combine them to various functions (play, pause, volume, next ...)
-- GPIO expander (buttons, led and rotary)
-- IR receiver (no pullup resistor or capacitor needed, just the 38kHz receiver)
-- Monochrome, GrayScale or Color displays using SPI or I2C (supported drivers are SH1106, SSD1306, SSD1322, SSD1326/7, SSD1351, ST7735, ST7789 and ILI9341).
-- Ethernet using a Microchip LAN8720 with RMII interface or Davicom DM9051/W5500 over SPI.
+- [Buttons](#buttons) and [Rotary Encoder](#rotary-encoder) and map/combine them to various functions (play, pause, volume, next ...)
+- [GPIO expander](#gpio-expanders) (buttons, led and rotary)
+- [IR receiver](#infrared) (no pullup resistor or capacitor needed, just the 38kHz receiver)
+- [Monochrome, GrayScale or Color displays](#display) using SPI or I2C (supported drivers are SH1106, SSD1306, SSD1322, SSD1326/7, SSD1351, ST7735, ST7789 and ILI9341).
+- [Ethernet](#ethernet-required-unpublished-version-43) using a Microchip LAN8720 with RMII interface or Davicom DM9051/W5500 over SPI.
 
 Other features include
 
@@ -51,26 +53,29 @@ The esp32 must run at 240 MHz, with Quad-SPI I/O at 80 MHz and a clock of 40 Mhz
 In 16 bits mode, although 192 kHz is reported as max rate, it's highly recommended to limit reported sampling rate to 96k (-Z 96000). Note that some high-speed 24/96k on-line streams might stutter because of TCP/IP stack performances. It is usually due to the fact that the server sends small packets of data and the esp32 cannot receive encoded audio fast enough, regardless of task priority settings (I've tried to tweak that a fair bit). The best option in that case is to let LMS proxy the stream as it will provide larger chunks and a "smoother" stream that can then be handled.
 
 Note as well that some codecs consume more CPU than others or have not been optimized as much. I've done my best to tweak these, but that level of optimization includes writing some assembly which is painful. One very demanding codec is AAC when files are encoded with SBR. It allows reconstruction of upper part of spectrum and thus higher sampling rate, but the codec spec is such that this is optional, you can decode simply lower band and accept lower sampling rate - See the AAC_DISABLE_SBR option below.
+
 ## Supported Hardware
 Any esp32-based hardware with at least 4MB of flash and 4MB of PSRAM will be capable of running squeezelite-esp32 and there are various boards that include such chip. A few are mentionned below, but any should work. You can find various help & instructions [here](https://forums.slimdevices.com/showthread.php?112697-ANNOUNCE-Squeezelite-ESP32-(dedicated-thread))
 
 **For the sake of clarity, WROOM modules DO NOT work as they don't include PSRAM. Some designs might add it externally, but it's (very) unlikely.**
+
 ### Raw WROVER module
 Per above description, a [WROVER module](https://www.espressif.com/en/products/modules/esp32) is enough to run Squeezelite-esp32, but that requires a bit of tinkering to extend it to have analogue audio or hardware buttons (e.g.) 
 
 Please note that when sending to a Bluetooth speaker (source), only 44.1 kHz can be used, so you either let LMS do the resampling, but you must make sure it only sends 44.1kHz tracks or enable internal resampling (using -R) option. If you connect a DAC, choice of sample rates will depends on its capabilities. See below for more details.
 
 Most DAC will work out-of-the-box with simply an I2S connection, but some require specific commands to be sent using I2C. See DAC option below to understand how to send these dedicated commands. There is build-in support for TAS575x, TAS5780, TAS5713 and AC101 DAC.
+
 ### SqueezeAMP
 This is the main hardware companion of Squeezelite-esp32 and has been developped together. Details on capabilities can be found [here](https://forums.slimdevices.com/showthread.php?110926-pre-ANNOUNCE-SqueezeAMP-and-SqueezeliteESP32) and [here](https://github.com/philippe44/SqueezeAMP).
 
 if you want to rebuild, use the `squeezelite-esp32-SqueezeAmp-sdkconfig.defaults` configuration file.
 
 NB: You can use the pre-build binaries SqueezeAMP4MBFlash which has all the hardware I/O set properly. You can also use the generic binary I2S4MBFlash in which case the NVS parameters shall be set to get the exact same behavior
-- set_GPIO: 12=green,13=red,34=jack,2=spkfault
-- batt_config: channel=7,scale=20.24
-- dac_config: model=TAS57xx,bck=33,ws=25,do=32,sda=27,scl=26,mute=14:0
-- spdif_config: bck=33,ws=25,do=15
+- set_GPIO: `12=green,13=red,34=jack,2=spkfault`
+- batt_config: `channel=7,scale=20.24`
+- dac_config: `model=TAS57xx,bck=33,ws=25,do=32,sda=27,scl=26,mute=14:0`
+- spdif_config: `bck=33,ws=25,do=15`
 
 ### ESP32-A1S
 Works with [ESP32-A1S](https://docs.ai-thinker.com/esp32-a1s) module that includes audio codec and headset output. You still need to use a demo board like [this](https://www.aliexpress.com/item/4001060963585.html) or an external amplifier if you want direct speaker connection. Note that there is a version with AC101 codec and another one with ES8388 with probably two variants - these boards are a mess (see below)
@@ -89,25 +94,30 @@ The board shown above has the following IO set
 (note that some GPIO need pullups)
 
 So a possible config would be
-- set_GPIO: 21=amp,22=green:0,39=jack:0
+- set_GPIO: `21=amp,22=green:0,39=jack:0`
 - a button mapping: 
-```
-[{"gpio":5,"normal":{"pressed":"ACTRLS_TOGGLE"}},{"gpio":18,"pull":true,"shifter_gpio":5,"normal":{"pressed":"ACTRLS_VOLUP"}, "shifted":{"pressed":"ACTRLS_NEXT"}}, {"gpio":23,"pull":true,"shifter_gpio":5,"normal":{"pressed":"ACTRLS_VOLDOWN"},"shifted":{"pressed":"ACTRLS_PREV"}}]
-```
-for AC101
-- dac_config: model=AC101,bck=27,ws=26,do=25,di=35,sda=33,scl=32
+	```json
+	[{"gpio":5,"normal":{"pressed":"ACTRLS_TOGGLE"}},{"gpio":18,"pull":true,"shifter_gpio":5,"normal":{"pressed":"ACTRLS_VOLUP"}, "shifted":{"pressed":"ACTRLS_NEXT"}}, {"gpio":23,"pull":true,"shifter_gpio":5,"normal":{"pressed":"ACTRLS_VOLDOWN"},"shifted":{"pressed":"ACTRLS_PREV"}}]
+	```
+for **AC101**
+- dac_config: `model=AC101,bck=27,ws=26,do=25,di=35,sda=33,scl=32`
  
-for ES8388 (it seems that there are variants with same version number - a total mess)
-- dac_config: model=ES8388,bck=5,ws=25,do=26,sda=18,scl=23,i2c=16
+for **ES8388** (it seems that there are variants with same version number - a total mess)
+- dac_config: `model=ES8388,bck=5,ws=25,do=26,sda=18,scl=23,i2c=16`
 or
-- dac_config: model=ES8388,bck=27,ws=25,do=26,sda=33,scl=32,i2c=16
+- dac_config: `model=ES8388,bck=27,ws=25,do=26,sda=33,scl=32,i2c=16`
+
 ### T-WATCH2020 by LilyGo
 This is a fun [smartwatch](http://www.lilygo.cn/prod_view.aspx?TypeId=50036&Id=1290&FId=t3:50036:3) based on ESP32. It has a 240x240 ST7789 screen and onboard audio. Not very useful to listen to anything but it works. This is an example of a device that requires an I2C set of commands for its dac (see below). There is a build-option if you decide to rebuild everything by yourself, otherwise the I2S default option works with the following parameters
 
-- dac_config: model=I2S,bck=26,ws=25,do=33,i2c=106,sda=21,scl=22
-- dac_controlset: { "init": [ {"reg":41, "val":128}, {"reg":18, "val":255} ], "poweron": [ {"reg":18, "val":64, "mode":"or"} ], "poweroff": [ {"reg":18, "val":191, "mode":"and"} ] }
-- spi_config: dc=27,data=19,clk=18
-- display_config: SPI,driver=ST7789,width=240,height=240,cs=5,back=12,speed=16000000,HFlip,VFlip
+- dac_config: `model=I2S,bck=26,ws=25,do=33,i2c=106,sda=21,scl=22`
+- dac_controlset:
+	```json
+	{ "init": [ {"reg":41, "val":128}, {"reg":18, "val":255} ], "poweron": [ {"reg":18, "val":64, "mode":"or"} ], "poweroff": [ {"reg":18, "val":191, "mode":"and"} ] }
+	```
+- spi_config: `dc=27,data=19,clk=18`
+- display_config: `SPI,driver=ST7789,width=240,height=240,cs=5,back=12,speed=16000000,HFlip,VFlip`
+
 ### ESP32-WROVER + I2S DAC
 Squeezelite-esp32 requires esp32 chipset and 4MB PSRAM. ESP32-WROVER meets these requirements. To get an audio output an I2S DAC can be used. Cheap PCM5102 I2S DACs work others may also work. PCM5012 DACs can be hooked up via:
 
@@ -138,7 +148,8 @@ The NVS parameter "i2c_config" set the i2c's gpio used for generic purpose (e.g.
 ```
 sda=<gpio>,scl=<gpio>[,port=0|1][,speed=<speed>]
 ```
-<strong>Please note that you can not use the same GPIO or port as the DAC</strong>
+**Please note that you can not use the same GPIO or port as the DAC.**
+
 ### SPI
 The esp32 has 3 user-accessible SPI sub-systems but SPI0 and SPI2 are reserved for internal use and Flash/PSRAM, so only SPI1 is available. The NVS parameter "spi_config" set the spi's gpio used for user purpose (e.g. display, ethernet, GPIO expander). Leave it blank to disable SPI usage. The DC parameter is needed for displays. Syntax is
 ```
@@ -153,18 +164,19 @@ bck=<gpio>,ws=<gpio>,do=<gpio>[,mck][,mute=<gpio>[:0|1][,model=TAS57xx|TAS5713|A
 if "model" is not set or is not recognized, then default "I2S" is used. The option "mck" is used for some codecs that require a master clock (although they should not). Only GPIO0 can be used as MCLK and be aware that this cannot coexit with RMII Ethernet (see ethernet section below). I2C parameters are optional and only needed if your DAC requires an I2C control (See 'dac_controlset' below). Note that "i2c" parameters are decimal, hex notation is not allowed.
 
 So far, TAS57xx, TAS5713, AC101, WM8978 and ES8388 are recognized models where the proper init sequence/volume/power controls are sent. For other codecs that might require an I2C commands, please use the parameter "dac_controlset" that allows definition of simple commands to be sent over i2c for init, power, speakder and headset on and off using a JSON syntax:
-```
+```json
 { <command>: [ {"reg":<register>,"val":<value>,"mode":<nothing>|"or"|"and"}, ... {{"reg":<register>,"val":<value>,"mode":<nothing>|"or"|"and"} ],
   <command>: [ {"reg":<register>,"val":<value>,"mode":<nothing>|"or"|"and"}, ... {{"reg":<register>,"val":<value>,"mode":<nothing>|"or"|"and"} ],
   ... }
 ```
-Where \<command\> is one of init, poweron, poweroff, speakeron, speakeroff, headseton, headsetoff
+Where `<command>` is one of init, poweron, poweroff, speakeron, speakeroff, headseton, headsetoff
 
 This is standard JSON notation, so if you are not familiar with it, Google is your best friend. Be aware that the '...' means you can have as many entries as you want, it's not part of the syntax. Every section is optional, but it does not make sense to set i2c in the 'dac_config' parameter and not setting anything here. The parameter 'mode' allows to *or* the register with the value or to *and* it. Don't set 'mode' if you simply want to write. The 'val parameter can be an array [v1, v2,...] to write a serie of bytes in a single i2c burst (in that case 'mode' is ignored). **Note that all values must be decimal**. You can use a validator like [this](https://jsonlint.com) to verify your syntax
 
 NB: For specific builds (all except I2S), all this is ignored. For know codecs, the built-in sequences can be overwritten using dac_controlset
 
-<strong>Please note that you can not use the same GPIO or port as the I2C</strong>
+**Please note that you can not use the same GPIO or port as the I2C.**
+
 ### SPDIF
 The NVS parameter "spdif_config" sets the i2s's gpio needed for SPDIF. 
 
@@ -189,6 +201,7 @@ GPIO  ----210ohm-----------||---- coax S/PDIF signal out
                     |
 Ground -------------------------- coax signal ground
 ```
+
 ### Display
 The NVS parameter "display_config" sets the parameters for an optional display. It can be I2C (see [here](#i2c) for shared bus) or SPI (see [here](#spi) for shared bus) Syntax is
 ```
@@ -219,7 +232,7 @@ The NVS parameter "metadata_config" sets how metadata is displayed for AirPlay a
 ```
 - 'speed' is the scrolling speed in ms (default is 33ms)
 - 'pause' is the pause time between scrolls in ms (default is 3600ms)
-- 'format' can contain free text and any of the 3 keywords %artist%, %album%, %title%. Using that format string, the keywords are replaced by their value to build the string to be displayed. Note that the plain text following a keyword that happens to be empty during playback of a track will be removed. For example, if you have set format=%artist% - %title% and there is no artist in the metadata then only <title> will be displayed not " - <title>".
+- 'format' can contain free text and any of the 3 keywords `%artist%`, `%album%`, `%title%`. Using that format string, the keywords are replaced by their value to build the string to be displayed. Note that the plain text following a keyword that happens to be empty during playback of a track will be removed. For example, if you have set format=`%artist% - %title%` and there is no artist in the metadata then only `<title>` will be displayed not ` - <title>`.
 - 'artwork' enables coverart display, if available (does not work for Bluetooth). The optional parameter indicates if the artwork should be resized (1) to fit the available space. Note that the built-in resizer can only do 2,4 and 8 downsizing, so fit is not optimal. The artwork will be placed at the right of the display for landscape displays and underneath the two information lines for others (there is no user option to tweak that).
 
 ### Infrared
@@ -236,13 +249,13 @@ The parameter "set_GPIO" is used to assign GPIO to various functions.
 
 GPIO can be set to GND provide or Vcc at boot. This is convenient to power devices that consume less than 40mA from the side connector. Be careful because there is no conflict checks being made wrt which GPIO you're changing, so you might damage your board or create a conflict here. 
 
-The \<amp\> parameter can use used to assign a GPIO that will be set to active level (default 1) when playback starts. It will be reset when squeezelite becomes idle. The idle timeout is set on the squeezelite command line through -C \<timeout\>
+The `<amp>` parameter can use used to assign a GPIO that will be set to active level (default 1) when playback starts. It will be reset when squeezelite becomes idle. The idle timeout is set on the squeezelite command line through `-C <timeout>`
 
 If you have an audio jack that supports insertion (use :0 or :1 to set the level when inserted), you can specify which GPIO it's connected to. Using the parameter jack_mutes_amp allows to mute the amp when headset (e.g.) is inserted.
 
 You can set the Green and Red status led as well with their respective active state (:0 or :1)
 
-The \<ir\> parameter set the GPIO associated to an IR receiver. No need to add pullup or capacitor
+The `<ir>` parameter set the GPIO associated to an IR receiver. No need to add pullup or capacitor
 
 Syntax is:
 
@@ -271,14 +284,15 @@ model=<model>,addr=<addr>,[,port=system|dac][,base=<n>|100][,count=<n>|16][,intr
 - intr: real GPIO to use as interrupt.
 	
 Note that PWM ("led_brightness" below) is not supported for expanded GPIOs and they cannot be used for high speed or precise timing signals like CS, D/C, Reset and Ready. Buttons, rotary encoder, amplifier control and power are supported. Depending on the actual chipset, pullup or pulldown might be supported so you might have to add external resistors (only MCP23x17 does pullup). The pca8575 is not a great chip, it generate a fair bit of spurious interrupts when used for GPIO out. When using a SPI expander, the bus must be configured using shared [SPI](#SPI) bus
+
 ### LED 
-See §**set_GPIO** for how to set the green and red LEDs. In addition, their brightness can be controlled using the "led_brigthness" parameter. The syntax is
+See [set_GPIO](#set-gpio) for how to set the green and red LEDs. In addition, their brightness can be controlled using the "led_brigthness" parameter. The syntax is
 ```
 [green=0..100][,red=0..100]
 ```
 NB: For well-known configuration, this is ignored
+
 ### Rotary Encoder
-	
 One rotary encoder is supported, quadrature shift with press. Such encoders usually have 2 pins for encoders (A and B), and common C that must be set to ground and an optional SW pin for press. A, B and SW must be pulled up, so automatic pull-up is provided by ESP32, but you can add your own resistors. A bit of filtering on A and B (~470nF) helps for debouncing which is not made by software. 
 
 Encoder is normally hard-coded to respectively knob left, right and push on LMS and to volume down/up/play toggle on BT and AirPlay. Using the option 'volume' makes it hard-coded to volume down/up/play toggle all the time (even in LMS). The option 'longpress' allows an alternate mode when SW is long-pressed. In that mode, left is previous, right is next and press is toggle. Every long press on SW alternates between modes (the main mode actual behavior depends on 'volume').
@@ -303,9 +317,10 @@ The SW gpio is optional, you can re-affect it to a pure button if you prefer but
 See also the "IMPORTANT NOTE" on the "Buttons" section and remember that when 'lms_ctrls_raw' (see below) is activated, none of these knobonly,volume,longpress options apply, raw button codes (not actions) are simply sent to LMS
 
 **Note that gpio 36 and 39 are input only and cannot use interrupt, so they cannot be set to A or B. When using them for SW, a 100ms polling is used which is expensive**
+
 ### Buttons
 Buttons are described using a JSON string with the following syntax
-```
+```json
 [
 {"gpio":<num>,		
  "type":"BUTTON_LOW | BUTTON_HIGH",	
@@ -334,7 +349,7 @@ Where (all parameters are optionals except gpio)
  - "shifted": action to take when a button is pressed/released and shifted (see above/below)
  - "longshifted": action to take when a button is long-pressed/released and shifted (see above/below)
 
-Where \<action\> is either the name of another configuration to load (remap) or one amongst
+Where `<action>` is either the name of another configuration to load (remap) or one amongst
 
 ```
 ACTRLS_NONE, ACTRLS_POWER, ACTRLS_VOLUP, ACTRLS_VOLDOWN, ACTRLS_TOGGLE, ACTRLS_PLAY, 
@@ -347,7 +362,7 @@ KNOB_LEFT, KNOB_RIGHT, KNOB_PUSH,
 One you've created such a string, use it to fill a new NVS parameter with any name below 16(?) characters. You can have as many of these configs as you can. Then set the config parameter "actrls_config" with the name of your default config
 
 For example a config named "buttons" :
-```
+```json
 [{"gpio":4,"type":"BUTTON_LOW","pull":true,"long_press":1000,"normal":{"pressed":"ACTRLS_VOLDOWN"},"longpress":{"pressed":"buttons_remap"}},
  {"gpio":5,"type":"BUTTON_LOW","pull":true,"shifter_gpio":4,"normal":{"pressed":"ACTRLS_VOLUP"}, "shifted":{"pressed":"ACTRLS_TOGGLE"}}]
 ``` 
@@ -356,7 +371,7 @@ Defines two buttons
 - second on GPIO 5, active low. When pressed it triggers a volume up command. If first button is pressed together with this button, then a play/pause toggle command is generated.
 
 While the config named "buttons_remap"
-```
+```json
 [{"gpio":4,"type":"BUTTON_LOW","pull":true,"long_press":1000,"normal":{"pressed":"BCTRLS_DOWN"},"longpress":{"pressed":"buttons"}},
  {"gpio":5,"type":"BUTTON_LOW","pull":true,"shifter_gpio":4,"normal":{"pressed":"BCTRLS_UP"}}]
 ``` 
@@ -364,10 +379,14 @@ Defines two buttons
 - first on GPIO 4, active low. When pressed, it triggers a navigation down command. When pressed more than 1000ms, it changes the button configuration for the one described above
 - second on GPIO 5, active low. When pressed it triggers a navigation up command. That button, in that configuration, has no shift option
 
-Below is a difficult but functional 2-buttons interface for your decoding pleasure
+Below is a difficult but functional 2-buttons interface for your decoding pleasure:
 
-*buttons*
+`actrls_config`:
 ```
+buttons
+```
+`buttons`:
+```json
 [{"gpio":4,"type":"BUTTON_LOW","pull":true,"long_press":1000,
  "normal":{"pressed":"ACTRLS_VOLDOWN"},
  "longpress":{"pressed":"buttons_remap"}},
@@ -377,8 +396,8 @@ Below is a difficult but functional 2-buttons interface for your decoding pleasu
  "longpress":{"pressed":"ACTRLS_NEXT"}}
 ]
 ```
-*buttons_remap*
-```
+`buttons_remap`:
+```json
 [{"gpio":4,"type":"BUTTON_LOW","pull":true,"long_press":1000,
  "normal":{"pressed":"BCTRLS_DOWN"},
  "longpress":{"pressed":"buttons"}},
@@ -389,9 +408,9 @@ Below is a difficult but functional 2-buttons interface for your decoding pleasu
  "longshifted":{"pressed":"BCTRLS_LEFT"}}
 ]
 ```
-<strong>IMPORTANT NOTE</strong>: LMS also supports the possibility to send 'raw' button codes. It's a bit complicated, so bear with me. Buttons can either be processed by SqueezeESP32 and mapped to a "function" like play/pause or they can be just sent to LMS as plain (raw) code and the full logic of press/release/longpress is handled by LMS, you don't have any control on that.
+**IMPORTANT NOTE**: LMS also supports the possibility to send 'raw' button codes. It's a bit complicated, so bear with me. Buttons can either be processed by SqueezeESP32 and mapped to a "function" like play/pause or they can be just sent to LMS as plain (raw) code and the full logic of press/release/longpress is handled by LMS, you don't have any control on that.
 
-The benefit of the "raw" mode is that you can build a player which is as close as possible to a Boom (e.g.) but you can't use the remapping function nor longress or shift logics to do your own mapping when you have a limited set of buttons. In 'raw' mode, all you really need to define is the mapping between the gpio and the button. As far as LMS is concerned, any other option in these JSON payloads does not matter. Now, when you use BT or AirPlay, the full JSON construct described above fully applies, so the shift, longpress, remapping options still work. 
+The benefit of the "raw" mode is that you can build a player which is as close as possible to a Boom (e.g.) but you can't use the remapping function nor longress or shift logics to do your own mapping when you have a limited set of buttons. In 'raw' mode, all you really need to define is the mapping between the gpio and the button. As far as LMS is concerned, any other option in these JSON payloads does not matter. Now, when you use BT or AirPlay, the full JSON construct described above fully applies, so the shift, longpress, remapping options still work.
 
 **Be aware that when using non "raw" mode, the CLI (Command Line Interface) of LMS is used and *must* be available without password**
 
@@ -400,6 +419,8 @@ There is no good or bad option, it's your choice. Use the NVS parameter "lms_ctr
 **Note that gpio 36 and 39 are input only and cannot use interrupt. When using them for a button, a 100ms polling is started which is expensive. Long press is also likely to not work very well**
 ### Ethernet (required unpublished version 4.3)
 Wired ethernet is supported by esp32 with various options but squeezelite is only supporting a Microchip LAN8720 with a RMII interface like [this](https://www.aliexpress.com/item/32858432526.html) or SPI-ethernet bridges like Davicom DM9051 [that](https://www.amazon.com/dp/B08JLFWX9Z) or W5500 like [this](https://www.aliexpress.com/item/32312441357.html).
+
+**Note:** Touch buttons that can be find on some board like the LyraT V4.3 are not supported currently.
 	
 #### RMII (LAN8720)	
 - RMII PHY wiring is fixed and can not be changed
@@ -443,7 +464,9 @@ The NVS parameter "bat_config" sets the ADC1 channel used to measure battery/DC 
 channel=0..7,scale=<scale>,cells=<2|3>[,atten=<0|1|2|3>]
 ```
 NB: Set parameter to empty to disable battery reading. For well-known configuration, this is ignored (except for SqueezeAMP where number of cells is required)
+
 # Configuration
+
 ## Setup WiFi
 - Boot the esp, look for a new wifi access point showing up and connect to it. Default build ssid and passwords are "squeezelite"/"squeezelite". 
 - Once connected, navigate to 192.168.4.1 
@@ -452,7 +475,6 @@ NB: Set parameter to empty to disable battery reading. For well-known configurat
 - Once connection is established, note down the address the device received; this is the address you will use to configure it going forward 
 
 ## Setup squeezelite command line (optional)
-
 At this point, the device should have disabled its built-in access point and should be connected to a known WiFi network.
 - navigate to the address that was noted in step #1
 - Using the list of predefined options, choose the mode in which you want squeezelite to start
@@ -465,7 +487,6 @@ At this point, the device should have disabled its built-in access point and sho
 - You can enable accessto  NVS parameters under 'credits'
 
 ## Monitor
-
 In addition of the esp-idf serial link monitor option, you can also enable a telnet server (see NVS parameters) where you'll have access to a ton of logs of what's happening inside the WROVER.
 
 ## Update Squeezelite
@@ -497,8 +518,11 @@ See squeezlite command line, but keys options are
 	- r "<minrate>-<maxrate>"
 	- C <sec> : set timeout to switch off amp gpio
 	- W : activate WAV and AIFF header parsing
+
 # Building everything yourself
+
 ## Setting up ESP-IDF
+
 ### Docker
 You can use docker to build squeezelite-esp32 (optional) 
 First you need to build the Docker container:
@@ -531,6 +555,7 @@ Use `idf.py monitor` to monitor the application (see esp-idf documentation)
 Note: You can use `idf.py build -DDEPTH=32` to build the 32 bits version and add the `-DVERSION=<your_version>` to add a custom version name (it will be 0.0-<your_version>). If you want to change the whole version string, see squeezelite.h. You can also disable the SBR extension of AAC codecs as it consumes a lot of CPU and might overload the esp32. Use `-DAAC_DISABLE_SBR=1` for that
 
 If you have already cloned the repository and you are getting compile errors on one of the submodules (e.g. telnet), run the following git command in the root of the repository location: `git submodule update --init --recursive`
+
 ### Rebuild codecs (highly recommended to NOT try that)
 - for codecs libraries, add -mlongcalls if you want to rebuild them, but you should not (use the provided ones in codecs/lib). if you really want to rebuild them, open an issue
 - libmad, libflac (no esp's version), libvorbis (tremor - not esp's version), alac work
