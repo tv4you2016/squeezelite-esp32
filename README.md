@@ -322,10 +322,10 @@ See also the "IMPORTANT NOTE" on the "Buttons" section and remember that when 'l
 Buttons are described using a JSON string with the following syntax
 ```json
 [
-{"gpio":<num>,		
- "type":"BUTTON_LOW | BUTTON_HIGH",	
+{"gpio":<num>,
+ "type":"BUTTON_LOW | BUTTON_HIGH",
  "pull":[true|false],
- "long_press":<ms>, 
+ "long_press":<ms>,
  "debounce":<ms>,
  "shifter_gpio":<-1|num>,
  "normal": {"pressed":"<action>","released":"<action>"},
