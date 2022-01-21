@@ -68,7 +68,7 @@ extern const uint8_t server_cert_pem_end[] asm("_binary_github_pem_end");
 // as an exception _init function don't need include
 extern void services_init(void);
 extern void	display_init(char *welcome);
-extern void target_init(void);
+extern void target_init(char *target);
 const char * str_or_unknown(const char * str) { return (str?str:unknown_string_placeholder); }
 const char * str_or_null(const char * str) { return (str?str:null_string_placeholder); }
 bool is_recovery_running;
@@ -421,6 +421,9 @@ void register_default_nvs(){
 
 	ESP_LOGD(TAG,"Registering default value for key %s", "rel_api");
 	config_set_default(NVS_TYPE_STR, "rel_api", CONFIG_RELEASE_API, 0);
+	
+	ESP_LOGD(TAG,"Registering default value for key %s", "target");
+	config_set_default(NVS_TYPE_STR, "target", "", 0);
 
 	wait_for_commit();
 	ESP_LOGD(TAG,"Done setting default values in nvs.");
@@ -475,7 +478,11 @@ void app_main()
 	ESP_LOGI(TAG,"Initializing display");
 	display_init("SqueezeESP32");
 	
-	target_init();
+	char *target = config_alloc_get_default(NVS_TYPE_STR, "target", CONFIG_TARGET, 0);
+	if (target) {
+		target_init(target);
+		free(target);
+	}	
 
 	if(is_recovery_running && display){
 		GDS_ClearExt(display, true);
