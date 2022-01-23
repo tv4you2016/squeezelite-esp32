@@ -334,7 +334,6 @@ menu "Squeezelite-ESP32"
 		config LED_GREEN_GPIO
 			int "Green led GPIO"
 			default 12 if SQUEEZEAMP	
-			default 22 if MUSE
 			default -1 
 			help
 				Set to -1 for no LED
