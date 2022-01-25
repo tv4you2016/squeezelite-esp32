@@ -69,13 +69,24 @@ Most DAC will work out-of-the-box with simply an I2S connection, but some requir
 ### SqueezeAMP
 This is the main hardware companion of Squeezelite-esp32 and has been developped together. Details on capabilities can be found [here](https://forums.slimdevices.com/showthread.php?110926-pre-ANNOUNCE-SqueezeAMP-and-SqueezeliteESP32) and [here](https://github.com/philippe44/SqueezeAMP).
 
-if you want to rebuild, use the `squeezelite-esp32-SqueezeAmp-sdkconfig.defaults` configuration file.
+If you want to rebuild, use the `squeezelite-esp32-SqueezeAmp-sdkconfig.defaults` configuration file.
 
 NB: You can use the pre-build binaries SqueezeAMP4MBFlash which has all the hardware I/O set properly. You can also use the generic binary I2S4MBFlash in which case the NVS parameters shall be set to get the exact same behavior
 - set_GPIO: `12=green,13=red,34=jack,2=spkfault`
-- batt_config: `channel=7,scale=20.24`
+- bat_config: `channel=7,scale=20.24`
 - dac_config: `model=TAS57xx,bck=33,ws=25,do=32,sda=27,scl=26,mute=14:0`
 - spdif_config: `bck=33,ws=25,do=15`
+
+### MuseLuxe
+This portable battery-powered [speaker](https://raspiaudio.com/produit/esp-muse-luxe) is compatible with squeezelite-esp32 for which there is a dedicated build supplied with every update. If you want to rebuild, use the `squeezelite-esp32-Muse-sdkconfig.defaults` configuration file.
+
+NB: You can use the pre-build binaries Muse4MBFlash which has all the hardware I/O set properly. You can also use the generic binary I2S4MBFlash in which case the NVS parameters shall be set to get the exact same behavior
+- bat_config: `channel=5,scale=7.48,atten=3,cells=1`
+- spi_config: `"mosi=15,miso=2,clk=14` *(this one is probably optional)*
+- dac_config: `model=I2S,bck=5,ws=25,do=26,di=35,i2c=16,sda=18,scl=23,mck`
+- dac_controlset: `{"init":[ {"reg":0,"val":128}, {"reg":0,"val":0}, {"reg":25,"val":4}, {"reg":1,"val":80}, {"reg":2,"val":0},	{"reg":8,"val":0}, {"reg":4,"val":192},	{"reg":0,"val":18}, {"reg":1,"val":0}, {"reg":23,"val":24}, {"reg":24,"val":2}, {"reg":38,"val":9}, {"reg":39,"val":144}, {"reg":42,"val":144}, {"reg":43,"val":128}, {"reg":45,"val":128}, {"reg":27,"val":0}, {"reg":26,"val":0}, {"reg":2,"val":240}, {"reg":2,"val":0},	{"reg":29,"val":28}, {"reg":4,"val":48}, {"reg":25,"val":0}, {"reg":46,"val":33}, {"reg":47,"val":33} ]}`
+- actrls_config: buttons
+- define a "buttons" variable with: `[{"gpio":32, "pull":true, "debounce":10, "normal":{"pressed":"ACTRLS_VOLDOWN"}}, {"gpio":19, "pull":true, "debounce":40, "normal":{"pressed":"ACTRLS_VOLUP"}}, {"gpio":12, "pull":true, "debounce":40, "long_press":1000, "normal":{"pressed":"ACTRLS_TOGGLE"},"longpress":{"pressed":"ACTRLS_POWER"}}]`
 
 ### ESP32-A1S
 Works with [ESP32-A1S](https://docs.ai-thinker.com/esp32-a1s) module that includes audio codec and headset output. You still need to use a demo board like [this](https://www.aliexpress.com/item/4001060963585.html) or an external amplifier if you want direct speaker connection. Note that there is a version with AC101 codec and another one with ES8388 with probably two variants - these boards are a mess (see below)
