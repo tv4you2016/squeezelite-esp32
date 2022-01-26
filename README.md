@@ -81,6 +81,7 @@ NB: You can use the pre-build binaries SqueezeAMP4MBFlash which has all the hard
 This portable battery-powered [speaker](https://raspiaudio.com/produit/esp-muse-luxe) is compatible with squeezelite-esp32 for which there is a dedicated build supplied with every update. If you want to rebuild, use the `squeezelite-esp32-Muse-sdkconfig.defaults` configuration file.
 
 NB: You can use the pre-build binaries Muse4MBFlash which has all the hardware I/O set properly. You can also use the generic binary I2S4MBFlash in which case the NVS parameters shall be set to get the exact same behavior
+- target: `muse`
 - bat_config: `channel=5,scale=7.48,atten=3,cells=1`
 - spi_config: `"mosi=15,miso=2,clk=14` *(this one is probably optional)*
 - dac_config: `model=I2S,bck=5,ws=25,do=26,di=35,i2c=16,sda=18,scl=23,mck`
