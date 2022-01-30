@@ -425,10 +425,10 @@ buttons
 ]
 ```
 **IMPORTANT NOTE**: LMS also supports the possibility to send 'raw' button codes. It's a bit complicated, so bear with me. Buttons can either be processed by SqueezeESP32 and mapped to a "function" like play/pause or they can be just sent to LMS as plain (raw) code and the full logic of press/release/longpress is handled by LMS, you don't have any control on that.
+	
+When buttons are mapped to a "function" (non "raw" mode) a *command* is sent to LMS using the CLI (Command Line Interface) but this only works if LMS does not have a password set. In "raw" mode, a button *code* is sent using the always-openn control socket between LMS and the player.
 
 The benefit of the "raw" mode is that you can build a player which is as close as possible to a Boom (e.g.) but you can't use the remapping function nor longress or shift logics to do your own mapping when you have a limited set of buttons. In 'raw' mode, all you really need to define is the mapping between the gpio and the button. As far as LMS is concerned, any other option in these JSON payloads does not matter. Now, when you use BT or AirPlay, the full JSON construct described above fully applies, so the shift, longpress, remapping options still work.
-
-**Be aware that when using non "raw" mode, the CLI (Command Line Interface) of LMS is used and *must* be available without password**
 
 There is no good or bad option, it's your choice. Use the NVS parameter "lms_ctrls_raw" to change that option
 	
