@@ -875,7 +875,9 @@ static void grfa_handler(u8_t *data, int len) {
 	artwork.size += size;
 	if (artwork.size == length) {
 		GDS_ClearWindow(display, artwork.x, artwork.y, -1, -1, GDS_COLOR_BLACK);
+		xSemaphoreTake(displayer.mutex, portMAX_DELAY);
 		GDS_DrawJPEG(display, artwork.data, artwork.x, artwork.y, artwork.y < displayer.height ? (GDS_IMAGE_RIGHT | GDS_IMAGE_TOP) : GDS_IMAGE_CENTER);
+		xSemaphoreGive(displayer.mutex);
 		free(artwork.data);
 		artwork.data = NULL;
 	} 
