@@ -12,6 +12,8 @@ Squeezelite-esp32 is an audio software suite made to run on espressif's ESP32 wi
 
 Depending on the hardware connected to the ESP32, you can send audio to a local DAC, to SPDIF or to a Bluetooth speaker. The bare minimum required hardware is a WROVER module with 4MB of Flash and 4MB of PSRAM (https://www.espressif.com/en/products/modules/esp32). With that module standalone, just apply power and you can stream to a Bluetooth speaker. You can also send audio to most I2S DAC as well as to SPDIF receivers using just a cable or an optical transducer.
 
+Note that streaming **to** a Bluetooth speaker is not the main purpose and remains experimental, so your mileage will vary. We will not work on improving or fixing that feature, please don't open issues about that.
+
 But squeezelite-esp32 is highly extensible and you can add
 
 - [Buttons](#buttons) and [Rotary Encoder](#rotary-encoder) and map/combine them to various functions (play, pause, volume, next ...)
