@@ -424,8 +424,18 @@ bool GDS_DrawJPEG(struct GDS_Device* Device, uint8_t *Source, int x, int y, int 
 		Context.Pixels = 0;
 					
 		// do decompress & draw
+ESP_LOGW(TAG,"Context before p:%d, w:%d, h:%d, min(%d,%d), ofs(%d,%d)", 
+	Context.Pixels,
+	Context.Width, Context.Height,
+	Context.XMin, Context.YMin,
+	Context.XOfs, Context.YOfs);		
 		Res = jd_decomp(&Decoder, OutHandlerDirect, N);
-		if (Res == JDR_OK && Context.Pixels != (Context.Width + 1) * (Context.Height + 1)) {
+ESP_LOGW(TAG,"Context after p:%d, w:%d, h:%d, min(%d,%d), ofs(%d,%d)", 
+	Context.Pixels,
+	Context.Width, Context.Height,
+	Context.XMin, Context.YMin,
+	Context.XOfs, Context.YOfs);
+		if (Res == JDR_OK && Context.Pixels == Context.Width * Context.Height) {
 			Device->Dirty = true;
 			Ret = true;
 		} else {	
