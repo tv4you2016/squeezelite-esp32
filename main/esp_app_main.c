@@ -79,7 +79,7 @@ void cb_connection_got_ip(void *pvParameter){
 
 	tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &ipInfo);
 	if (ip.addr && ipInfo.ip.addr != ip.addr) {
-		ESP_LOGW(TAG, "IP change, need to reboot");
+		ESP_LOGW(TAG, "O MEU IP change, need to reboot");
 		if(!wait_for_commit()){
 			ESP_LOGW(TAG,"Unable to commit configuration. ");
 		}
