@@ -66,7 +66,7 @@ Per above description, a [WROVER module](https://www.espressif.com/en/products/m
 
 Please note that when sending to a Bluetooth speaker (source), only 44.1 kHz can be used, so you either let LMS do the resampling, but you must make sure it only sends 44.1kHz tracks or enable internal resampling (using -R) option. If you connect a DAC, choice of sample rates will depends on its capabilities. See below for more details.
 
-Most DAC will work out-of-the-box with simply an I2S connection, but some require specific commands to be sent using I2C. See DAC option below to understand how to send these dedicated commands. There is build-in support for TAS575x, TAS5780, TAS5713 and AC101 DAC.
+Most DAC will work out-of-the-box with simply an I2S connection, but some require specific commands to be sent using I2C. See DAC option below to understand how to send these dedicated commands. There is build-in support for TAS575x, TAS5780, TAS5713, TAS5760L and AC101 DAC.
 
 ### SqueezeAMP
 This is the main hardware companion of Squeezelite-esp32 and has been developped together. Details on capabilities can be found [here](https://forums.slimdevices.com/showthread.php?110926-pre-ANNOUNCE-SqueezeAMP-and-SqueezeliteESP32) and [here](https://github.com/philippe44/SqueezeAMP).
@@ -90,6 +90,10 @@ NB: You can use the pre-build binaries Muse4MBFlash which has all the hardware I
 - dac_controlset: `{"init":[ {"reg":0,"val":128}, {"reg":0,"val":0}, {"reg":25,"val":4}, {"reg":1,"val":80}, {"reg":2,"val":0},	{"reg":8,"val":0}, {"reg":4,"val":192},	{"reg":0,"val":18}, {"reg":1,"val":0}, {"reg":23,"val":24}, {"reg":24,"val":2}, {"reg":38,"val":9}, {"reg":39,"val":144}, {"reg":42,"val":144}, {"reg":43,"val":128}, {"reg":45,"val":128}, {"reg":27,"val":0}, {"reg":26,"val":0}, {"reg":2,"val":240}, {"reg":2,"val":0},	{"reg":29,"val":28}, {"reg":4,"val":48}, {"reg":25,"val":0}, {"reg":46,"val":33}, {"reg":47,"val":33} ]}`
 - actrls_config: buttons
 - define a "buttons" variable with: `[{"gpio":32, "pull":true, "debounce":10, "normal":{"pressed":"ACTRLS_VOLDOWN"}}, {"gpio":19, "pull":true, "debounce":40, "normal":{"pressed":"ACTRLS_VOLUP"}}, {"gpio":12, "pull":true, "debounce":40, "long_press":1000, "normal":{"pressed":"ACTRLS_TOGGLE"},"longpress":{"pressed":"ACTRLS_POWER"}}]`
+
+### ESP32-ISND1SW
+- set_GPIO: `2=red,5=spkfault`
+- dac_config: `model=TAS5760L,bck=26,ws=25,do=27,sda=33,scl=32,mute=18:0,mck`
 
 ### ESP32-A1S
 Works with [ESP32-A1S](https://docs.ai-thinker.com/esp32-a1s) module that includes audio codec and headset output. You still need to use a demo board like [this](https://www.aliexpress.com/item/4001060963585.html) or an external amplifier if you want direct speaker connection. Note that there is a version with AC101 codec and another one with ES8388 with probably two variants - these boards are a mess (see below)

@@ -29,6 +29,8 @@ static int i2c_port = -1;
  * init
  */
 int adac_init(char *config, int i2c_port_num) {	 
+	
+
 	char *p;
 	int i2c_addr = 0;
 	
@@ -48,7 +50,7 @@ int adac_init(char *config, int i2c_port_num) {
 			.sda_pullup_en = GPIO_PULLUP_ENABLE,
 			.scl_io_num = -1,
 			.scl_pullup_en = GPIO_PULLUP_ENABLE,
-			.master.clk_speed = 250000,
+			.master.clk_speed = 400000,
 		};
 
 	PARSE_PARAM(config, "i2c", '=', i2c_addr);

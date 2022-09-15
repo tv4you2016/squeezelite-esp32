@@ -85,7 +85,7 @@ CONFIG_RELEASE_API="https://api.github.com/repos/sle118/squeezelite-esp32/releas
 CONFIG_SQUEEZELITE_ESP32_RELEASE_URL="https://github.com/sle118/squeezelite-esp32/releases"
 CONFIG_PROJECT_NAME="Squeezelite-ESP32"
 CONFIG_FW_PLATFORM_NAME="ESP32"
-CONFIG_DAC_CONFIG=""
+CONFIG_DAC_CONFIG="model=TAS5760L,bck=26,ws=25,do=27,sda=33,scl=32,mute=18:0,mck"
 CONFIG_SPDIF_CONFIG=""
 CONFIG_GPIO_EXP_CONFIG=""
 CONFIG_SPI_CONFIG=""
