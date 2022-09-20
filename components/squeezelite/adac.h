@@ -31,6 +31,7 @@ extern const struct adac_s dac_ac101;
 extern const struct adac_s dac_wm8978;
 extern const struct adac_s dac_external;
 extern const struct adac_s dac_tas5760l;
+extern const struct adac_s dac_tas5722l;
 
 int 		adac_init(char *config, int i2c_port);
 void		adac_deinit(void);

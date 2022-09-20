@@ -1,5 +1,5 @@
-idf_component_register( SRC_DIRS . external ac101 tas57xx wm8978 tas5760l
-						INCLUDE_DIRS .  ac101 tas5760l
+idf_component_register( SRC_DIRS . external ac101 tas57xx wm8978 tas5760l tas5722l
+						INCLUDE_DIRS .  ac101 tas5760l tas5722l
 						PRIV_REQUIRES 	
 									codecs
 									newlib 

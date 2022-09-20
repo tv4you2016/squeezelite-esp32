@@ -31,9 +31,9 @@
 #include <driver/i2c.h>
 #include <driver/i2s.h>
 #include "adac.h"
-#include "tas5760l.h"
+#include "tas5722l.h"
 
-static const char TAG[] = "TAS5760L";
+static const char TAG[] = "TAS5722L";
 
 #define SPKOUT_EN ((1 << 9) | (1 << 11) | (1 << 7) | (1 << 5))
 #define EAROUT_EN ((1 << 11) | (1 << 12) | (1 << 13))
@@ -54,13 +54,13 @@ static void headset(bool active);
 static bool volume(unsigned left, unsigned right);
 static void power(adac_power_e mode);
 
-const struct adac_s dac_tas5760l = { "TAS5760L", init, adac_deinit, power, speaker, headset, volume };
+const struct adac_s dac_tas5722l = { "TAS5722L", init, adac_deinit, power, speaker, headset, volume };
 
-static void tas5760l_start(tas5760l_module_t mode);
-static void tas5760l_stop(void);
-static void tas5760l_set_earph_volume(uint8_t volume);
-static void tas5760l_set_spk_volume(uint8_t volume);
-static void tas5760l_mute(bool mute);
+static void tas5722l_start(tas5722l_module_t mode);
+static void tas5722l_stop(void);
+static void tas5722l_set_earph_volume(uint8_t volume);
+static void tas5722l_set_spk_volume(uint8_t volume);
+static void tas5722l_mute(bool mute);
 
 /****************************************************************************************
  * init
@@ -84,17 +84,23 @@ static bool init(char *config, int i2c_port, i2s_config_t *i2s_config) {
     adac_init(config, i2c_port);
 
 	if (adac_read_word(SENSOR_ADDR, REG_ADD_DEVICE_ID) == 0xffff) {
-		ESP_LOGW(TAG, "No TAS5760L detected");
+		ESP_LOGW(TAG, "No TAS5722L detected");
 		i2c_driver_delete(i2c_port);
 		return false;		
 	}
 	
-	ESP_LOGI(TAG, "TAS5760L detected");
+	ESP_LOGI(TAG, "TAS5722L detected");
+
+
 	
-	
+	adac_write_byte(SENSOR_ADDR, REG_ADD_DIGITAL_CONTROL_3, 0x06); //Each time slot is 16 bits in width; MCLK signal is derived from MCLK pin.
+
+    adac_write_byte(SENSOR_ADDR, REG_ADD_ANALOG_CONTROL, 0x51); //0x51;            // Analog Gain = MIN
+                                                             //0x5D;          // Analog Gain = 26.3 dBV (= MAX);
+
 	// set gain for speaker and earphone
-	//tas5760l_set_spk_volume(100);
-	//tas5760l_set_earph_volume(100);
+	//tas5722l_set_spk_volume(100);
+	//tas5722l_set_earph_volume(100);
 	
 	return true;
 }	
@@ -114,10 +120,10 @@ static void power(adac_power_e mode) {
 	switch(mode) {
 	case ADAC_STANDBY:
 	case ADAC_OFF:
-		tas5760l_stop();
+		tas5722l_stop();
 		break;
 	case ADAC_ON:
-		tas5760l_start(AC_MODULE_DAC);
+		tas5722l_start(AC_MODULE_DAC);
 		break;		
 	default:
 		ESP_LOGW(TAG, "unknown power command");
@@ -147,51 +153,51 @@ static void headset(bool active) {
 /****************************************************************************************
  * Set normalized (0..100) volume
  */
-static void tas5760l_set_spk_volume(uint8_t volume) {
+static void tas5722l_set_spk_volume(uint8_t volume) {
 
      if (volume == 0) {
-        tas5760l_mute(true);
+        tas5722l_mute(true);
     } else {
-        tas5760l_mute(false);
+        tas5722l_mute(false);
     }
 
-	adac_write_word(SENSOR_ADDR, REG_ADD_VOLUME_CONTROL, volumetable[volume]);
+	adac_write_byte(SENSOR_ADDR, REG_ADD_VOLUME_CONTROL, volume);
 }
 
 /****************************************************************************************
  * Set normalized (0..100) earphone volume
  */
-static void tas5760l_set_earph_volume(uint8_t volume) {
+static void tas5722l_set_earph_volume(uint8_t volume) {
      if (volume == 0) {
-        tas5760l_mute(true);
+        tas5722l_mute(true);
     } else {
-        tas5760l_mute(false);
+        tas5722l_mute(false);
     }
 
-	adac_write_word(SENSOR_ADDR, REG_ADD_VOLUME_CONTROL, volumetable[volume]);
+    adac_write_byte(SENSOR_ADDR, REG_ADD_VOLUME_CONTROL, volume);
 }
 
 
 /****************************************************************************************
  * 
  */
-static void tas5760l_start(tas5760l_module_t mode) {
-     tas5760l_mute(false);
+static void tas5722l_start(tas5722l_module_t mode) {
+     tas5722l_mute(false);
 }
 
 /****************************************************************************************
  * 
  */
-static void tas5760l_stop(void) {
-  tas5760l_mute(true);
+static void tas5722l_stop(void) {
+  tas5722l_mute(true);
 }
-static void tas5760l_mute(bool mute) {
+static void tas5722l_mute(bool mute) {
   if (mute) {
         gpio_set_level(GPIO_SDZ, 0);
-        tas5760lisMuted = false;
+        tas5722isMuted = false;
     } else {
         gpio_set_level(GPIO_SDZ, 1);
-        tas5760lisMuted = true;  
+        tas5722isMuted = true;  
     } 
 }
 
