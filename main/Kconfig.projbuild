@@ -55,6 +55,12 @@ menu "Squeezelite-ESP32"
 				select LED_LOCKED
 				select SPKFAULT_LOCKED
 				select TARGET_LOCKED
+			config iSND1W 
+				bool "iSND1W"
+				select I2C_LOCKED
+			config iSNDS1W 
+					bool "iSNDS1W"
+					select I2C_LOCKED
 			config MUSE
 				bool "Muse"
 				select JACK_LOCKED
@@ -86,7 +92,10 @@ menu "Squeezelite-ESP32"
 			default "SqueezeAMP" if SQUEEZEAMP
 			default "Squeezelite-TWATCH" if TWATCH2020
 			default "Muse" if MUSE
+			default "iSND1W" if iSND1W
+			default "iSNDS1W" if iSNDS1W
 			default "Squeezelite-ESP32"
+
 		config FW_PLATFORM_NAME
 			string 
 			default "SqueezeAmp" if SQUEEZEAMP
@@ -100,6 +109,9 @@ menu "Squeezelite-ESP32"
 			default "model=TAS57xx,bck=33,ws=25,do=32,sda=27,scl=26,mute=14:0" if SQUEEZEAMP
 			default "model=I2S,bck=26,ws=25,do=33,i2c=53,sda=21,scl=22" if TWATCH2020
 			default "model=I2S,bck=5,ws=25,do=26,di=35,i2c=16,sda=18,scl=23,mck" if MUSE
+			default "model=TAS5722L,bck=26,ws=25,do=27,sda=33,scl=32,mute=18:0,mck" if iSND1W
+			default "model=TAS5760L,bck=26,ws=25,do=27,sda=33,scl=32,mute=18:0,mck" if iSNDS1W
+			
 			default ""
 		config SPDIF_CONFIG		
 			string
@@ -388,6 +400,8 @@ menu "Squeezelite-ESP32"
 		config SPKFAULT_GPIO		
 			int "Speaker fault GPIO"
 			default 2 if SQUEEZEAMP
+			default 5 if iSNDS1W
+			default 5 if iSND1W
 			default -1
 			help
 				GPIO to detect speaker fault condition. Set to -1 for no detection. 
